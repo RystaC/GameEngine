@@ -32,6 +32,12 @@ struct PushConstants {
 	glm::mat4 projection;
 };
 
+struct UniformBufferObject {
+	glm::mat4 model;
+	glm::mat4 view;
+	glm::mat4 projection;
+};
+
 class GraphicsEngine {
 	// engine version information (requires C++17 or later)
 	static constexpr std::string_view engineName = "VulkanGraphicsEngine";
@@ -73,10 +79,16 @@ class GraphicsEngine {
 	VkBuffer indexBuffer_;
 	VkDeviceMemory indexBufferMemory_;
 
+	std::vector<VkBuffer> uniformBuffers_;
+	std::vector<VkDeviceMemory> uniformBuffersMemory_;
+	std::vector<std::uint8_t*> uniformBuffersMapped_;
+
 	VkShaderModule vertexShaderModule_;
 	VkShaderModule fragmentShaderModule_;
 
-	VkDescriptorSetLayout defaultDescriptorsetLayout_;
+	VkDescriptorSetLayout defaultDescriptorSetLayout_;
+	VkDescriptorPool defaultDescriptorPool_;
+	std::vector<VkDescriptorSet> defaultDescriptorSets_;
 
 	VkPipelineLayout defaultPipelineLayout_;
 	VkPipeline defaultGraphicsPipeline_;
@@ -104,8 +116,14 @@ class GraphicsEngine {
 	void createVertexBuffer(const std::vector<T>&);
 	template<typename T>
 	void createIndexBuffer(const std::vector<T>&);
+	template<typename T>
+	void createUniformBuffer(std::size_t);
 
 	void createShaderModule(const char*, const char*);
+
+	void createDefaultDescriptorSetLayout();
+	void createDefaultDescriptorPool(std::size_t);
+	void createDefaultDescriptorSets(std::size_t);
 
 	void createDefaultPipelineLayout();
 	void createDefaultGraphicsPipeline();

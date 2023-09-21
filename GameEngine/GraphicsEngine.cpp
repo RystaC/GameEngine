@@ -316,6 +316,47 @@ void GraphicsEngine::createIndexBuffer(const std::vector<T>& indexData) {
 	VK_CHECK(vkBindBufferMemory(device_, indexBuffer_, indexBufferMemory_, 0));
 }
 
+template<typename T>
+void GraphicsEngine::createUniformBuffer(std::size_t numBuffers) {
+	uniformBuffers_.resize(numBuffers);
+	uniformBuffersMemory_.resize(numBuffers);
+	uniformBuffersMapped_.resize(numBuffers);
+
+	for (auto i = 0; i < numBuffers; ++i) {
+		VkBufferCreateInfo bufferInfo{};
+		bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+		bufferInfo.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+		bufferInfo.size = sizeof(T);
+		bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+		VK_CHECK(vkCreateBuffer(device_, &bufferInfo, allocator, &uniformBuffers_[i]));
+
+		VkMemoryRequirements memoryRequirements{};
+		vkGetBufferMemoryRequirements(device_, uniformBuffers_[i], &memoryRequirements);
+		uint32_t memoryTypeIndex = UINT32_MAX;
+		for (std::uint32_t i = 0; i < memoryProperties_.memoryTypeCount; ++i) {
+			if ((memoryProperties_.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) != 0) {
+				memoryTypeIndex = i;
+				break;
+			}
+		}
+		if (memoryTypeIndex == UINT32_MAX) {
+			std::cerr << "[createIndexBuffer] failed to find memory for index buffer" << std::endl;
+			std::exit(EXIT_FAILURE);
+		}
+
+		VkMemoryAllocateInfo allocateInfo{};
+		allocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+		allocateInfo.allocationSize = memoryRequirements.size;
+		allocateInfo.memoryTypeIndex = memoryTypeIndex;
+
+		VK_CHECK(vkAllocateMemory(device_, &allocateInfo, allocator, &uniformBuffersMemory_[i]));
+		VK_CHECK(vkBindBufferMemory(device_, uniformBuffers_[i], uniformBuffersMemory_[i], 0));
+
+		VK_CHECK(vkMapMemory(device_, uniformBuffersMemory_[i], 0, sizeof(T), 0, reinterpret_cast<void**>(&uniformBuffersMapped_[i])));
+	}
+}
+
 void GraphicsEngine::createShaderModule(const char* vertexSPIRVPath, const char* fragmentSPIRVPath) {
 	{
 		std::ifstream file(vertexSPIRVPath, std::ios::in | std::ios::binary);
@@ -362,6 +403,67 @@ void GraphicsEngine::createShaderModule(const char* vertexSPIRVPath, const char*
 	}
 }
 
+void GraphicsEngine::createDefaultDescriptorSetLayout() {
+	VkDescriptorSetLayoutBinding layoutBinding{};
+	layoutBinding.binding = 0;
+	layoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	layoutBinding.descriptorCount = 1;
+	layoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+	VkDescriptorSetLayoutCreateInfo layoutInfo{};
+	layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	layoutInfo.bindingCount = 1;
+	layoutInfo.pBindings = &layoutBinding;
+
+	VK_CHECK(vkCreateDescriptorSetLayout(device_, &layoutInfo, allocator, &defaultDescriptorSetLayout_));
+}
+
+void GraphicsEngine::createDefaultDescriptorPool(std::size_t numUniformBuffers) {
+	VkDescriptorPoolSize poolSize{};
+	poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	poolSize.descriptorCount = static_cast<std::uint32_t>(numUniformBuffers);
+
+	VkDescriptorPoolCreateInfo poolInfo{};
+	poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+	poolInfo.poolSizeCount = 1;
+	poolInfo.pPoolSizes = &poolSize;
+	poolInfo.maxSets = static_cast<std::uint32_t>(numUniformBuffers);
+
+	VK_CHECK(vkCreateDescriptorPool(device_, &poolInfo, allocator, &defaultDescriptorPool_));
+}
+
+void GraphicsEngine::createDefaultDescriptorSets(std::size_t numDescriptorSets) {
+	std::vector<VkDescriptorSetLayout> layouts(numDescriptorSets, defaultDescriptorSetLayout_);
+
+	VkDescriptorSetAllocateInfo allocateInfo{};
+	allocateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	allocateInfo.descriptorPool = defaultDescriptorPool_;
+	allocateInfo.descriptorSetCount = static_cast<std::uint32_t>(numDescriptorSets);
+	allocateInfo.pSetLayouts = layouts.data();
+
+	defaultDescriptorSets_.resize(numDescriptorSets);
+
+	VK_CHECK(vkAllocateDescriptorSets(device_, &allocateInfo, defaultDescriptorSets_.data()));
+
+	for (auto i = 0; i < numDescriptorSets; ++i) {
+		VkDescriptorBufferInfo bufferInfo{};
+		bufferInfo.buffer = uniformBuffers_[i];
+		bufferInfo.offset = 0;
+		bufferInfo.range = sizeof(UniformBufferObject);
+
+		VkWriteDescriptorSet descriptorWrite{};
+		descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		descriptorWrite.dstSet = defaultDescriptorSets_[i];
+		descriptorWrite.dstBinding = 0;
+		descriptorWrite.dstArrayElement = 0;
+		descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		descriptorWrite.descriptorCount = 1;
+		descriptorWrite.pBufferInfo = &bufferInfo;
+
+		vkUpdateDescriptorSets(device_, 1, &descriptorWrite, 0, nullptr);
+	}
+}
+
 void GraphicsEngine::createDefaultPipelineLayout() {
 	VkPushConstantRange pushConstantRange{};
 	pushConstantRange.size = sizeof(PushConstants);
@@ -370,8 +472,10 @@ void GraphicsEngine::createDefaultPipelineLayout() {
 
 	VkPipelineLayoutCreateInfo layoutInfo{};
 	layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-	layoutInfo.pushConstantRangeCount = 1;
-	layoutInfo.pPushConstantRanges = &pushConstantRange;
+	layoutInfo.setLayoutCount = 1;
+	layoutInfo.pSetLayouts = &defaultDescriptorSetLayout_;
+	//layoutInfo.pushConstantRangeCount = 1;
+	//layoutInfo.pPushConstantRanges = &pushConstantRange;
 
 	VK_CHECK(vkCreatePipelineLayout(device_, &layoutInfo, allocator, &defaultPipelineLayout_));
 }
@@ -422,7 +526,7 @@ void GraphicsEngine::createDefaultGraphicsPipeline() {
 	rasterizationInfo.depthClampEnable = VK_FALSE;
 	rasterizationInfo.rasterizerDiscardEnable = VK_FALSE;
 	rasterizationInfo.polygonMode = VK_POLYGON_MODE_FILL;
-	rasterizationInfo.cullMode = VK_CULL_MODE_NONE;
+	rasterizationInfo.cullMode = VK_CULL_MODE_BACK_BIT;
 	rasterizationInfo.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
 	rasterizationInfo.depthBiasEnable = VK_FALSE;
 	rasterizationInfo.lineWidth = 1.0f;
@@ -680,6 +784,11 @@ void GraphicsEngine::initialize(SDL_Window* window, const char* applicationName,
 
 	createShaderModule("basic.vert.spv", "basic.frag.spv");
 
+	createUniformBuffer<UniformBufferObject>(defaultFramebuffers_.size());
+	createDefaultDescriptorSetLayout();
+	createDefaultDescriptorPool(defaultFramebuffers_.size());
+	createDefaultDescriptorSets(defaultFramebuffers_.size());
+
 	createDefaultPipelineLayout();
 	createDefaultGraphicsPipeline();
 
@@ -691,13 +800,16 @@ void GraphicsEngine::initialize(SDL_Window* window, const char* applicationName,
 void GraphicsEngine::draw() {
 	std::size_t offset = 0;
 
-	auto model = glm::rotate(glm::mat4(1.0f), glm::radians(static_cast<float>(frame_)), glm::vec3(0.0f, 0.0f, 1.0f));
+	auto model = glm::rotate(glm::mat4(1.0f), glm::radians(static_cast<float>(frame_)), glm::vec3(0.0f, 1.0f, 0.0f));
 	++frame_;
 	auto view = glm::lookAt(glm::vec3(2.0f), glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 	auto projection = glm::perspective(glm::radians(45.0f), static_cast<float>(imageSize_.width) / imageSize_.height, 0.1f, 10.0f);
 	projection[1][1] *= -1;
 
-	PushConstants pushConstants{ model, view, projection };
+	UniformBufferObject uniformBufferObject{ model, view, projection };
+	//PushConstants pushConstants{ model, view, projection };
+
+	std::memcpy(uniformBuffersMapped_[currentFrameIndex_], &uniformBufferObject, sizeof(UniformBufferObject));
 
 	beginCommand();
 	barrierReadToWrite();
@@ -705,7 +817,8 @@ void GraphicsEngine::draw() {
 	vkCmdBindPipeline(commandBuffer_, VK_PIPELINE_BIND_POINT_GRAPHICS, defaultGraphicsPipeline_);
 	vkCmdBindVertexBuffers(commandBuffer_, 0, 1, &vertexBuffer_, &offset);
 	vkCmdBindIndexBuffer(commandBuffer_, indexBuffer_, 0, VK_INDEX_TYPE_UINT16);
-	vkCmdPushConstants(commandBuffer_, defaultPipelineLayout_, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstants), &pushConstants);
+	vkCmdBindDescriptorSets(commandBuffer_, VK_PIPELINE_BIND_POINT_GRAPHICS, defaultPipelineLayout_, 0, 1, &defaultDescriptorSets_[currentFrameIndex_], 0, nullptr);
+	//vkCmdPushConstants(commandBuffer_, defaultPipelineLayout_, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstants), &pushConstants);
 	vkCmdDrawIndexed(commandBuffer_, 6, 1, 0, 0, 0);
 	endRenderPass();
 	barrierWriteToRead();
