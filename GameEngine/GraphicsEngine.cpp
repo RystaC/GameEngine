@@ -185,32 +185,133 @@ void GraphicsEngine::createDefaultImageViews() {
 	defaultImageViews_ = std::move(imageViews);
 }
 
-void GraphicsEngine::createDefaultRenderPass() {
-	VkAttachmentDescription attachmentDesc{};
-	attachmentDesc.format = desiredFormat;
-	attachmentDesc.samples = VK_SAMPLE_COUNT_1_BIT;
-	attachmentDesc.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-	attachmentDesc.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-	attachmentDesc.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-	attachmentDesc.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+void GraphicsEngine::createDefaultDepthImage() {
+	constexpr VkFormatFeatureFlags desiredFeatures = VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;
 
-	VkAttachmentReference attachmentRef{};
-	attachmentRef.attachment = 0;
-	attachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	VkFormatProperties formatProperties{};
+	vkGetPhysicalDeviceFormatProperties(physicalDevice_, desiredDepthFormat, &formatProperties);
+
+	if ((formatProperties.optimalTilingFeatures & desiredFeatures) != desiredFeatures) {
+		std::cerr << "[createDefaultDepthImage] failed to find desired format for depth image" << std::endl;
+		std::exit(EXIT_FAILURE);
+	}
+
+	VkImageCreateInfo imageInfo{};
+	imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+	imageInfo.imageType = VK_IMAGE_TYPE_2D;
+	imageInfo.extent.width = imageSize_.width;
+	imageInfo.extent.height = imageSize_.height;
+	imageInfo.extent.depth = 1;
+	imageInfo.mipLevels = 1;
+	imageInfo.arrayLayers = 1;
+	imageInfo.format = desiredDepthFormat;
+	imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+	imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	imageInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+	imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+	
+	VK_CHECK(vkCreateImage(device_, &imageInfo, allocator, &defaultDepthImage_));
+
+	VkMemoryRequirements memoryRequirements{};
+	vkGetImageMemoryRequirements(device_, defaultDepthImage_, &memoryRequirements);
+	uint32_t memoryTypeIndex = UINT32_MAX;
+	for (std::uint32_t i = 0; i < memoryProperties_.memoryTypeCount; ++i) {
+		if ((memoryProperties_.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT) != 0) {
+			memoryTypeIndex = i;
+			break;
+		}
+	}
+	if (memoryTypeIndex == UINT32_MAX) {
+		std::cerr << "[createDefaultDepthImage] failed to find memory for depth buffer" << std::endl;
+		std::exit(EXIT_FAILURE);
+	}
+
+	VkMemoryAllocateInfo allocateInfo{};
+	allocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	allocateInfo.allocationSize = memoryRequirements.size;
+	allocateInfo.memoryTypeIndex = memoryTypeIndex;
+
+	VK_CHECK(vkAllocateMemory(device_, &allocateInfo, allocator, &defaultDepthImageMemory_));
+	VK_CHECK(vkBindImageMemory(device_, defaultDepthImage_, defaultDepthImageMemory_, 0));
+}
+
+void GraphicsEngine::createDefaultDepthImageView() {
+	VkImageViewCreateInfo imageViewInfo{};
+	imageViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+	imageViewInfo.image = defaultDepthImage_;
+	imageViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+	imageViewInfo.format = VK_FORMAT_D32_SFLOAT;
+	imageViewInfo.components = {
+		VK_COMPONENT_SWIZZLE_R,
+		VK_COMPONENT_SWIZZLE_G,
+		VK_COMPONENT_SWIZZLE_B,
+		VK_COMPONENT_SWIZZLE_A,
+	};
+	imageViewInfo.subresourceRange = { VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1 };
+
+	VK_CHECK(vkCreateImageView(device_, &imageViewInfo, allocator, &defaultDepthImageView_));
+}
+
+void GraphicsEngine::createDefaultRenderPass() {
+	VkAttachmentDescription colorAttachmentDesc{};
+	colorAttachmentDesc.format = desiredFormat;
+	colorAttachmentDesc.samples = VK_SAMPLE_COUNT_1_BIT;
+	colorAttachmentDesc.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	colorAttachmentDesc.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+	colorAttachmentDesc.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	colorAttachmentDesc.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+	VkAttachmentDescription depthAttachmentDesc{};
+	depthAttachmentDesc.format = desiredDepthFormat;
+	depthAttachmentDesc.samples = VK_SAMPLE_COUNT_1_BIT;
+	depthAttachmentDesc.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	depthAttachmentDesc.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+	depthAttachmentDesc.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	depthAttachmentDesc.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+	std::array<VkAttachmentDescription, 2> attachmentDesc{ colorAttachmentDesc, depthAttachmentDesc };
+
+	VkAttachmentReference colorAttachmentRef{};
+	colorAttachmentRef.attachment = 0;
+	colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+	VkAttachmentReference depthAttachmentRef{};
+	depthAttachmentRef.attachment = 1;
+	depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
 	VkSubpassDescription subpassDesc{};
 	subpassDesc.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
 	subpassDesc.colorAttachmentCount = 1;
-	subpassDesc.pColorAttachments = &attachmentRef;
+	subpassDesc.pColorAttachments = &colorAttachmentRef;
+	subpassDesc.pDepthStencilAttachment = &depthAttachmentRef;
+
+	VkSubpassDependency colorDependency{};
+	colorDependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+	colorDependency.dstSubpass = 0;
+	colorDependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	colorDependency.srcAccessMask = 0;
+	colorDependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	colorDependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+	VkSubpassDependency depthDependency{};
+	depthDependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+	depthDependency.dstSubpass = 0;
+	depthDependency.srcStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+	depthDependency.srcAccessMask = 0;
+	depthDependency.dstStageMask = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+	depthDependency.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+
+	std::array<VkSubpassDependency, 2> dependencies{ colorDependency, depthDependency };
 
 	VkRenderPassCreateInfo renderPassInfo{};
 	renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-	renderPassInfo.attachmentCount = 1;
-	renderPassInfo.pAttachments = &attachmentDesc;
+	renderPassInfo.attachmentCount = attachmentDesc.size();
+	renderPassInfo.pAttachments = attachmentDesc.data();
 	renderPassInfo.subpassCount = 1;
 	renderPassInfo.pSubpasses = &subpassDesc;
-	renderPassInfo.dependencyCount = 0;
-	renderPassInfo.pDependencies = nullptr;
+	renderPassInfo.dependencyCount = dependencies.size();
+	renderPassInfo.pDependencies = dependencies.data();
 
 	VK_CHECK(vkCreateRenderPass(device_, &renderPassInfo, allocator, &defaultRenderPass_));
 }
@@ -219,11 +320,15 @@ void GraphicsEngine::createDefaultFramebuffers() {
 	std::vector<VkFramebuffer> framebuffers(defaultImageViews_.size());
 
 	for (auto i = 0; i < framebuffers.size(); ++i) {
+		std::array<VkImageView, 2> attachmentViews{};
+		attachmentViews[0] = defaultImageViews_[i];
+		attachmentViews[1] = defaultDepthImageView_;
+
 		VkFramebufferCreateInfo framebufferInfo{};
 		framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
 		framebufferInfo.renderPass = defaultRenderPass_;
-		framebufferInfo.attachmentCount = 1;
-		framebufferInfo.pAttachments = &defaultImageViews_[i];
+		framebufferInfo.attachmentCount = attachmentViews.size();
+		framebufferInfo.pAttachments = attachmentViews.data();
 		framebufferInfo.width = imageSize_.width;
 		framebufferInfo.height = imageSize_.height;
 		framebufferInfo.layers = 1;
@@ -264,6 +369,7 @@ void GraphicsEngine::createVertexBuffer(const std::vector<T>& vertexData) {
 	allocateInfo.memoryTypeIndex = memoryTypeIndex;
 
 	VK_CHECK(vkAllocateMemory(device_, &allocateInfo, allocator, &vertexBufferMemory_));
+	VK_CHECK(vkBindBufferMemory(device_, vertexBuffer_, vertexBufferMemory_, 0));
 
 	std::uint8_t* mappedMemory{};
 	VK_CHECK(vkMapMemory(device_, vertexBufferMemory_, 0, sizeof(T) * vertexData.size(), 0, reinterpret_cast<void**>(& mappedMemory)));
@@ -271,8 +377,6 @@ void GraphicsEngine::createVertexBuffer(const std::vector<T>& vertexData) {
 	std::memcpy(mappedMemory, vertexData.data(), sizeof(T) * vertexData.size());
 
 	vkUnmapMemory(device_, vertexBufferMemory_);
-
-	VK_CHECK(vkBindBufferMemory(device_, vertexBuffer_, vertexBufferMemory_, 0));
 }
 
 template<typename T>
@@ -305,6 +409,7 @@ void GraphicsEngine::createIndexBuffer(const std::vector<T>& indexData) {
 	allocateInfo.memoryTypeIndex = memoryTypeIndex;
 
 	VK_CHECK(vkAllocateMemory(device_, &allocateInfo, allocator, &indexBufferMemory_));
+	VK_CHECK(vkBindBufferMemory(device_, indexBuffer_, indexBufferMemory_, 0));
 
 	std::uint8_t* mappedMemory{};
 	VK_CHECK(vkMapMemory(device_, indexBufferMemory_, 0, sizeof(T) * indexData.size(), 0, reinterpret_cast<void**>(&mappedMemory)));
@@ -312,8 +417,6 @@ void GraphicsEngine::createIndexBuffer(const std::vector<T>& indexData) {
 	std::memcpy(mappedMemory, indexData.data(), sizeof(T) * indexData.size());
 
 	vkUnmapMemory(device_, indexBufferMemory_);
-
-	VK_CHECK(vkBindBufferMemory(device_, indexBuffer_, indexBufferMemory_, 0));
 }
 
 template<typename T>
@@ -491,21 +594,22 @@ void GraphicsEngine::createDefaultGraphicsPipeline() {
 	stageInfo[1].module = fragmentShaderModule_;
 	stageInfo[1].pName = "main";
 
-	VkVertexInputBindingDescription inputBindingDesc = {
-		0, sizeof(VertexData), VK_VERTEX_INPUT_RATE_VERTEX,
+	std::array<VkVertexInputBindingDescription, 1> inputBindingDesc = {
+		VkVertexInputBindingDescription{0, sizeof(VertexData), VK_VERTEX_INPUT_RATE_VERTEX},
 	};
 
-	VkVertexInputAttributeDescription inputAttributeDesc[] = {
-		{0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0},
-		{1, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(VertexData, color)},
+	std::array<VkVertexInputAttributeDescription, 3> inputAttributeDesc = {
+		VkVertexInputAttributeDescription{0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(VertexData, position)},
+		VkVertexInputAttributeDescription{1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(VertexData, normal)},
+		VkVertexInputAttributeDescription{2, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(VertexData, color)},
 	};
 
 	VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
 	vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-	vertexInputInfo.vertexBindingDescriptionCount = 1;
-	vertexInputInfo.pVertexBindingDescriptions = &inputBindingDesc;
-	vertexInputInfo.vertexAttributeDescriptionCount = 2;
-	vertexInputInfo.pVertexAttributeDescriptions = inputAttributeDesc;
+	vertexInputInfo.vertexBindingDescriptionCount = static_cast<std::uint32_t>(inputBindingDesc.size());
+	vertexInputInfo.pVertexBindingDescriptions = inputBindingDesc.data();
+	vertexInputInfo.vertexAttributeDescriptionCount = static_cast<std::uint32_t>(inputAttributeDesc.size());
+	vertexInputInfo.pVertexAttributeDescriptions = inputAttributeDesc.data();
 
 	VkPipelineInputAssemblyStateCreateInfo inputAssemblyInfo{};
 	inputAssemblyInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -548,6 +652,16 @@ void GraphicsEngine::createDefaultGraphicsPipeline() {
 	colorBlendInfo.attachmentCount = 1;
 	colorBlendInfo.pAttachments = &colorBlendAttachment;
 
+	VkPipelineDepthStencilStateCreateInfo depthStencilInfo{};
+	depthStencilInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+	depthStencilInfo.depthTestEnable = VK_TRUE;
+	depthStencilInfo.depthWriteEnable = VK_TRUE;
+	depthStencilInfo.depthCompareOp = VK_COMPARE_OP_LESS;
+	depthStencilInfo.depthBoundsTestEnable = VK_FALSE;
+	depthStencilInfo.minDepthBounds = 0.0f;
+	depthStencilInfo.maxDepthBounds = 1.0f;
+	depthStencilInfo.stencilTestEnable = VK_FALSE;
+
 	VkPipelineDynamicStateCreateInfo dynamicInfo{};
 	dynamicInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
 	dynamicInfo.dynamicStateCount = 0;
@@ -563,6 +677,7 @@ void GraphicsEngine::createDefaultGraphicsPipeline() {
 	graphicsPipelineInfo.pRasterizationState = &rasterizationInfo;
 	graphicsPipelineInfo.pMultisampleState = &multisampleInfo;
 	graphicsPipelineInfo.pColorBlendState = &colorBlendInfo;
+	graphicsPipelineInfo.pDepthStencilState = &depthStencilInfo;
 	graphicsPipelineInfo.pDynamicState = &dynamicInfo;
 	graphicsPipelineInfo.layout = defaultPipelineLayout_;
 	graphicsPipelineInfo.renderPass = defaultRenderPass_;
@@ -595,43 +710,6 @@ void GraphicsEngine::createFence() {
 	fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
 
 	VK_CHECK(vkCreateFence(device_, &fenceInfo, allocator, &fence_));
-}
-
-void GraphicsEngine::initializeImages() {
-	VkCommandBufferInheritanceInfo inheritanceInfo{};
-	inheritanceInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
-	inheritanceInfo.framebuffer = defaultFramebuffers_[currentFrameIndex_];
-
-	VkCommandBufferBeginInfo beginInfo{};
-	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-	beginInfo.pInheritanceInfo = &inheritanceInfo;
-
-	VK_CHECK(vkBeginCommandBuffer(commandBuffer_, &beginInfo));
-
-	std::vector<VkImageMemoryBarrier> barriers(defaultImages_.size());
-	for (std::uint32_t i = 0; i < barriers.size(); ++i) {
-		barriers[i].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-		barriers[i].oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		barriers[i].newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-		barriers[i].image = defaultImages_[i];
-		barriers[i].subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
-	}
-
-	vkCmdPipelineBarrier(commandBuffer_, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0, 0, nullptr, 0, nullptr, static_cast<std::uint32_t>(barriers.size()), barriers.data());
-
-	VK_CHECK(vkEndCommandBuffer(commandBuffer_));
-
-	VkPipelineStageFlags waitStageFlags = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-
-	VkSubmitInfo submitInfo{};
-	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-	submitInfo.commandBufferCount = 1;
-	submitInfo.pCommandBuffers = &commandBuffer_;
-	submitInfo.pWaitDstStageMask = &waitStageFlags;
-
-	VK_CHECK(vkQueueSubmit(deviceQueue_, 1, &submitInfo, fence_));
-
-	VK_CHECK(vkQueueWaitIdle(deviceQueue_));
 }
 
 void GraphicsEngine::acquireNextImage() {
@@ -687,51 +765,25 @@ void GraphicsEngine::resetFence() {
 }
 
 void GraphicsEngine::beginRenderPass() {
-	VkClearValue clearValue{ 0.0f, 0.0f, 0.0f, 1.0f };
+	VkClearValue colorClearValue{}, depthClearValue{};
+	colorClearValue.color = { 0.0f, 0.0f, 0.0f, 1.0f };
+	depthClearValue.depthStencil = { 1.0f, 0 };
+
+	std::array<VkClearValue, 2> clearValues{ colorClearValue, depthClearValue };
 
 	VkRenderPassBeginInfo beginInfo{};
 	beginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
 	beginInfo.framebuffer = defaultFramebuffers_[currentFrameIndex_];
 	beginInfo.renderPass = defaultRenderPass_;
 	beginInfo.renderArea.extent = imageSize_;
-	beginInfo.clearValueCount = 1;
-	beginInfo.pClearValues = &clearValue;
+	beginInfo.clearValueCount = static_cast<std::uint32_t>(clearValues.size());
+	beginInfo.pClearValues = clearValues.data();
 
 	vkCmdBeginRenderPass(commandBuffer_, &beginInfo, VK_SUBPASS_CONTENTS_INLINE);
 }
 
 void GraphicsEngine::endRenderPass() {
 	vkCmdEndRenderPass(commandBuffer_);
-}
-
-void GraphicsEngine::barrierReadToWrite() {
-	VkImageMemoryBarrier barrier{};
-	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-	barrier.image = defaultImages_[currentFrameIndex_];
-	barrier.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT;
-	barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-	barrier.oldLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-	barrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	barrier.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
-
-	vkCmdPipelineBarrier(commandBuffer_, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
-}
-
-void GraphicsEngine::barrierWriteToRead() {
-	VkImageMemoryBarrier barrier{};
-	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-	barrier.image = defaultImages_[currentFrameIndex_];
-	barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-	barrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT;
-	barrier.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-	barrier.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	barrier.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
-
-	vkCmdPipelineBarrier(commandBuffer_, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
 }
 
 void GraphicsEngine::initialize(SDL_Window* window, const char* applicationName, std::uint32_t applicationVersion, const VkExtent2D& imageSize) {
@@ -765,20 +817,88 @@ void GraphicsEngine::initialize(SDL_Window* window, const char* applicationName,
 
 	createDefaultImages();
 	createDefaultImageViews();
+	createDefaultDepthImage();
+	createDefaultDepthImageView();
 	createDefaultRenderPass();
 	createDefaultFramebuffers();
 
+	/*std::vector<VertexData> vertexData = {
+		{glm::vec3(1.0f, 1.0f, 1.0f), glm::vec4(1.0f, 0.0f, 0.0f, 1.0f)},
+		{glm::vec3(-1.0f, 1.0f, 1.0f), glm::vec4(0.0f, 1.0f, 0.0f, 1.0f)},
+		{glm::vec3(-1.0f, 1.0f, -1.0f), glm::vec4(0.0f, 0.0f, 1.0f, 1.0f)},
+		{glm::vec3(1.0f, 1.0f, -1.0f), glm::vec4(1.0f, 1.0f, 0.0f, 1.0f)},
+		{glm::vec3(1.0f, -1.0f, 1.0f), glm::vec4(0.0f, 1.0f, 1.0f, 1.0f)},
+		{glm::vec3(-1.0f, -1.0f, 1.0f), glm::vec4(1.0f, 0.0f, 1.0f, 1.0f)},
+		{glm::vec3(-1.0f, -1.0f, -1.0f), glm::vec4(1.0f, 1.0f, 1.0f, 1.0f)},
+		{glm::vec3(1.0f, -1.0f, -1.0f), glm::vec4(0.0f, 0.0f, 0.0f, 1.0f)},
+	};*/
 	std::vector<VertexData> vertexData = {
-		{glm::vec3(-0.5f, 0.5f, 0.0f), glm::vec4(1.0f, 0.0f, 0.0f, 1.0f)},
-		{glm::vec3(-0.5f, -0.5f, 0.0f), glm::vec4(0.0f, 1.0f, 0.0f, 1.0f)},
-		{glm::vec3(0.5f, 0.5f, 0.0f), glm::vec4(0.0f, 0.0f, 1.0f, 1.0f)},
-		{glm::vec3(0.5f, -0.5f, 0.0f), glm::vec4(1.0f, 1.0f, 1.0f, 1.0f)},
+		// -x
+		{glm::vec3(-1.0f, 1.0f, -1.0f), glm::vec3(-1.0f, 0.0f, 0.0f), glm::vec4(1.0f)},
+		{glm::vec3(-1.0f, -1.0f, -1.0f), glm::vec3(-1.0f, 0.0f, 0.0f), glm::vec4(1.0f)},
+		{glm::vec3(-1.0f, 1.0f, 1.0f), glm::vec3(-1.0f, 0.0f, 0.0f), glm::vec4(1.0f)},
+		{glm::vec3(-1.0f, -1.0f, 1.0f), glm::vec3(-1.0f, 0.0f, 0.0f), glm::vec4(1.0f)},
+		// +x
+		{glm::vec3(1.0f, 1.0f, 1.0f), glm::vec3(1.0f, 0.0f, 0.0f), glm::vec4(1.0f)},
+		{glm::vec3(1.0f, -1.0f, 1.0f), glm::vec3(1.0f, 0.0f, 0.0f), glm::vec4(1.0f)},
+		{glm::vec3(1.0f, 1.0f, -1.0f), glm::vec3(1.0f, 0.0f, 0.0f), glm::vec4(1.0f)},
+		{glm::vec3(1.0f, -1.0f, -1.0f), glm::vec3(1.0f, 0.0f, 0.0f), glm::vec4(1.0f)},
+		// -y
+		{glm::vec3(-1.0f, -1.0f, 1.0f), glm::vec3(0.0f, -1.0f, 0.0f), glm::vec4(1.0f)},
+		{glm::vec3(-1.0f, -1.0f, -1.0f), glm::vec3(0.0f, -1.0f, 0.0f), glm::vec4(1.0f)},
+		{glm::vec3(1.0f, -1.0f, 1.0f), glm::vec3(0.0f, -1.0f, 0.0f), glm::vec4(1.0f)},
+		{glm::vec3(1.0f, -1.0f, -1.0f), glm::vec3(0.0f, -1.0f, 0.0f), glm::vec4(1.0f)},
+		// +y
+		{glm::vec3(-1.0f, 1.0f, -1.0f), glm::vec3(0.0f, 1.0f, 0.0f), glm::vec4(1.0f)},
+		{glm::vec3(-1.0f, 1.0f, 1.0f), glm::vec3(0.0f, 1.0f, 0.0f), glm::vec4(1.0f)},
+		{glm::vec3(1.0f, 1.0f, -1.0f), glm::vec3(0.0f, 1.0f, 0.0f), glm::vec4(1.0f)},
+		{glm::vec3(1.0f, 1.0f, 1.0f), glm::vec3(0.0f, 1.0f, 0.0f), glm::vec4(1.0f)},
+		// -z
+		{glm::vec3(1.0f, 1.0f, -1.0f), glm::vec3(0.0f, 0.0f, -1.0f), glm::vec4(1.0f)},
+		{glm::vec3(1.0f, -1.0f, -1.0f), glm::vec3(0.0f, 0.0f, -1.0f), glm::vec4(1.0f)},
+		{glm::vec3(-1.0f, 1.0f, -1.0f), glm::vec3(0.0f, 0.0f, -1.0f), glm::vec4(1.0f)},
+		{glm::vec3(-1.0f, -1.0f, -1.0f), glm::vec3(0.0f, 0.0f, -1.0f), glm::vec4(1.0f)},
+		// +z
+		{glm::vec3(-1.0f, 1.0f, 1.0f), glm::vec3(0.0f, 0.0f, 1.0f), glm::vec4(1.0f)},
+		{glm::vec3(-1.0f, -1.0f, 1.0f), glm::vec3(0.0f, 0.0f, 1.0f), glm::vec4(1.0f)},
+		{glm::vec3(1.0f, 1.0f, 1.0f), glm::vec3(0.0f, 0.0f, 1.0f), glm::vec4(1.0f)},
+		{glm::vec3(1.0f, -1.0f, 1.0f), glm::vec3(0.0f, 0.0f, 1.0f), glm::vec4(1.0f)},
 	};
 	createVertexBuffer(vertexData);
 
+	/*std::vector<std::uint16_t> indexData = {
+		0, 1, 2,
+		2, 3, 0,
+		4, 5, 6,
+		6, 7, 4,
+		0, 1, 5,
+		5, 4, 0,
+		1, 2, 6,
+		6, 5, 1,
+		2, 3, 7,
+		7, 6, 2,
+		3, 0, 4,
+		4, 7, 3,
+	};*/
 	std::vector<std::uint16_t> indexData = {
+		// -x
 		0, 1, 2,
 		2, 1, 3,
+		// +x
+		4, 5, 6,
+		6, 5, 7,
+		// -y
+		8, 9, 10,
+		10, 9, 11,
+		// +y
+		12, 13, 14,
+		14, 13, 15,
+		// -z
+		16, 17, 18,
+		18, 17, 19,
+		// +z
+		20, 21, 22,
+		22, 21, 23,
 	};
 	createIndexBuffer(indexData);
 
@@ -792,8 +912,6 @@ void GraphicsEngine::initialize(SDL_Window* window, const char* applicationName,
 	createDefaultPipelineLayout();
 	createDefaultGraphicsPipeline();
 
-	initializeImages();
-
 	acquireNextImage();
 }
 
@@ -801,8 +919,9 @@ void GraphicsEngine::draw() {
 	std::size_t offset = 0;
 
 	auto model = glm::rotate(glm::mat4(1.0f), glm::radians(static_cast<float>(frame_)), glm::vec3(0.0f, 1.0f, 0.0f));
+	model *= glm::rotate(glm::mat4(1.0f), glm::radians(static_cast<float>(frame_ * 2)), glm::vec3(0.0f, 0.0f, 1.0f));
 	++frame_;
-	auto view = glm::lookAt(glm::vec3(2.0f), glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+	auto view = glm::lookAt(glm::vec3(4.0f), glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 	auto projection = glm::perspective(glm::radians(45.0f), static_cast<float>(imageSize_.width) / imageSize_.height, 0.1f, 10.0f);
 	projection[1][1] *= -1;
 
@@ -812,16 +931,16 @@ void GraphicsEngine::draw() {
 	std::memcpy(uniformBuffersMapped_[currentFrameIndex_], &uniformBufferObject, sizeof(UniformBufferObject));
 
 	beginCommand();
-	barrierReadToWrite();
 	beginRenderPass();
+
 	vkCmdBindPipeline(commandBuffer_, VK_PIPELINE_BIND_POINT_GRAPHICS, defaultGraphicsPipeline_);
 	vkCmdBindVertexBuffers(commandBuffer_, 0, 1, &vertexBuffer_, &offset);
 	vkCmdBindIndexBuffer(commandBuffer_, indexBuffer_, 0, VK_INDEX_TYPE_UINT16);
 	vkCmdBindDescriptorSets(commandBuffer_, VK_PIPELINE_BIND_POINT_GRAPHICS, defaultPipelineLayout_, 0, 1, &defaultDescriptorSets_[currentFrameIndex_], 0, nullptr);
 	//vkCmdPushConstants(commandBuffer_, defaultPipelineLayout_, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstants), &pushConstants);
-	vkCmdDrawIndexed(commandBuffer_, 6, 1, 0, 0, 0);
+	vkCmdDrawIndexed(commandBuffer_, 36, 1, 0, 0, 0);
+
 	endRenderPass();
-	barrierWriteToRead();
 	endCommand();
 
 	submitCommands();

@@ -23,6 +23,7 @@
 
 struct VertexData {
 	glm::vec3 position;
+	glm::vec3 normal;
 	glm::vec4 color;
 };
 
@@ -46,6 +47,7 @@ class GraphicsEngine {
 	static constexpr VkAllocationCallbacks* allocator = nullptr;
 
 	static constexpr VkFormat desiredFormat = VK_FORMAT_B8G8R8A8_UNORM;
+	static constexpr VkFormat desiredDepthFormat = VK_FORMAT_D32_SFLOAT;
 
 	VkExtent2D imageSize_;
 
@@ -69,6 +71,9 @@ class GraphicsEngine {
 	
 	std::vector<VkImage> defaultImages_;
 	std::vector<VkImageView> defaultImageViews_;
+	VkImage defaultDepthImage_;
+	VkDeviceMemory defaultDepthImageMemory_;
+	VkImageView defaultDepthImageView_;
 	VkRenderPass defaultRenderPass_;
 	std::vector<VkFramebuffer> defaultFramebuffers_;
 	std::uint32_t currentFrameIndex_;
@@ -109,6 +114,8 @@ class GraphicsEngine {
 
 	void createDefaultImages();
 	void createDefaultImageViews();
+	void createDefaultDepthImage();
+	void createDefaultDepthImageView();
 	void createDefaultRenderPass();
 	void createDefaultFramebuffers();
 
@@ -137,8 +144,6 @@ class GraphicsEngine {
 
 	// command utilities
 
-	void initializeImages();
-
 	void acquireNextImage();
 	
 	void beginCommand();
@@ -152,9 +157,6 @@ class GraphicsEngine {
 
 	void beginRenderPass();
 	void endRenderPass();
-
-	void barrierReadToWrite();
-	void barrierWriteToRead();
 
 	// -----------------
 
