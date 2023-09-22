@@ -367,3 +367,5 @@ FodyWeavers.xsd
 
 # dynamic libraries
 *.dll
+/GameEngine/basic.frag.glsl
+/GameEngine/basic.vert.glsl
