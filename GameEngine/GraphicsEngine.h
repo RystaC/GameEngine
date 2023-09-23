@@ -13,6 +13,10 @@
 #include <unordered_map>
 #include <vector>
 
+#define STB_IMAGE_STATIC
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
 #ifdef _DEBUG
 #define VK_CHECK(x) if((x) != VK_SUCCESS) { std::cerr << "[" << __func__ << "] an error occurs in Vulkan" << std::endl; std::exit(EXIT_FAILURE); }
 #define SDL_CHECK(x) if((x) != SDL_TRUE) { std::cerr << "[" << __func__ << "] an error occurs in SDL" << std::endl; std::exit(EXIT_FAILURE); }
@@ -24,6 +28,7 @@
 struct VertexData {
 	glm::vec3 position;
 	glm::vec3 normal;
+	glm::vec2 texCoord;
 	glm::vec4 color;
 };
 
@@ -37,6 +42,7 @@ struct UniformBufferObject {
 	glm::mat4 model;
 	glm::mat4 view;
 	glm::mat4 projection;
+	glm::mat4 normalMatrix;
 };
 
 class GraphicsEngine {
@@ -60,6 +66,7 @@ class GraphicsEngine {
 	VkSwapchainKHR swapchain_;
 
 	VkPhysicalDevice physicalDevice_;
+	VkPhysicalDeviceProperties properties_;
 	VkPhysicalDeviceMemoryProperties memoryProperties_;
 	std::uint32_t queueFamilyIndex_;
 	VkQueue deviceQueue_;
@@ -83,6 +90,11 @@ class GraphicsEngine {
 
 	VkBuffer indexBuffer_;
 	VkDeviceMemory indexBufferMemory_;
+
+	VkImage textureImage_;
+	VkDeviceMemory textureImageMemory_;
+	VkImageView textureImageView_;
+	VkSampler textureSampler_;
 
 	std::vector<VkBuffer> uniformBuffers_;
 	std::vector<VkDeviceMemory> uniformBuffersMemory_;
@@ -126,6 +138,10 @@ class GraphicsEngine {
 	template<typename T>
 	void createUniformBuffer(std::size_t);
 
+	void createTextureImage(const std::vector<std::uint8_t>&, VkExtent2D);
+	void createTextureImageView();
+	void createTextureSampler();
+
 	void createShaderModule(const char*, const char*);
 
 	void createDefaultDescriptorSetLayout();
@@ -149,6 +165,9 @@ class GraphicsEngine {
 	void beginCommand();
 	void endCommand();
 	void submitCommands();
+
+	template<typename Func>
+	void submitCommandsOnce(Func);
 
 	void present();
 

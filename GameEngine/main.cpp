@@ -1,16 +1,48 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_vulkan.h>
+#include <shaderc/shaderc.hpp>
 
+#include <fstream>
 #include <iostream>
 #include <vector>
+
+#include <sys/stat.h>
 
 #include "GraphicsEngine.h"
 
 int main(int argc, char* argv[]) {
-	SDL_version version{};
-	SDL_VERSION(&version);
+	{
+		shaderc::Compiler compiler{};
+		shaderc::CompileOptions options{};
+		
+		{
+			std::ifstream vertexFile("basic.vert.glsl");
+			std::string vertexSource{ std::istreambuf_iterator<char>(vertexFile), std::istreambuf_iterator<char>() };
 
-	std::cout << (int)version.major << "." << (int)version.minor << "." << (int)version.patch << std::endl;
+			auto compiled = compiler.CompileGlslToSpv(vertexSource, shaderc_glsl_vertex_shader, "basic.vert.glsl");
+			if (compiled.GetCompilationStatus() != shaderc_compilation_status_success) {
+				std::cerr << "GLSL compilation failed:" << std::endl << compiled.GetErrorMessage() << std::endl;
+				std::exit(EXIT_FAILURE);
+			}
+
+			std::ofstream vertexSpv("basic.vert.spv", std::ios::out | std::ios::binary);
+			for (const auto value : compiled) vertexSpv.write(reinterpret_cast<const char*>(&value), sizeof(std::uint32_t));
+		}
+
+		{
+			std::ifstream fragmentFile("basic.frag.glsl");
+			std::string fragmentSource{ std::istreambuf_iterator<char>(fragmentFile), std::istreambuf_iterator<char>() };
+
+			auto compiled = compiler.CompileGlslToSpv(fragmentSource, shaderc_glsl_fragment_shader, "basic.frag.glsl");
+			if (compiled.GetCompilationStatus() != shaderc_compilation_status_success) {
+				std::cerr << "GLSL compilation failed:" << std::endl << compiled.GetErrorMessage() << std::endl;
+				std::exit(EXIT_FAILURE);
+			}
+
+			std::ofstream fragmentSpv("basic.frag.spv", std::ios::out | std::ios::binary);
+			for (const auto value : compiled) fragmentSpv.write(reinterpret_cast<const char*>(&value), sizeof(std::uint32_t));
+		}
+	}
 
 	constexpr std::int32_t windowWidth = 640;
 	constexpr std::int32_t windowHeight = 480;

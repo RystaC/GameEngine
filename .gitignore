@@ -367,5 +367,13 @@ FodyWeavers.xsd
 
 # dynamic libraries
 *.dll
-/GameEngine/basic.frag.glsl
-/GameEngine/basic.vert.glsl
+
+# texture files
+*.jpg
+*.png
+*.bmp
+*.dds
+*.gif
+
+# temporal ignore (maybe remove later)
+stb_image.h
