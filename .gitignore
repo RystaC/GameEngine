@@ -375,5 +375,5 @@ FodyWeavers.xsd
 *.dds
 *.gif
 
-# temporal ignore (maybe remove later)
-stb_image.h
+# PMX 3D model file
+*.pmx

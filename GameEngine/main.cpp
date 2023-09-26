@@ -6,17 +6,36 @@
 #include <iostream>
 #include <vector>
 
-#include <sys/stat.h>
-
 #include "GraphicsEngine.h"
+#include "PMXLoader.h"
+
+// fuck Windows
+#ifdef _WIN32
+#include <Windows.h>
+#endif
 
 int main(int argc, char* argv[]) {
+#ifdef _WIN32
+	UINT cp = GetConsoleOutputCP();
+	SetConsoleOutputCP(65001);
+#endif
+
+	PMXLoader loader{};
+	loader.load("miku.pmx");
+
+	return 0;
+
 	{
 		shaderc::Compiler compiler{};
 		shaderc::CompileOptions options{};
 		
 		{
 			std::ifstream vertexFile("basic.vert.glsl");
+			if (vertexFile.fail()) {
+				std::cerr << "failed to open GLSL file" << std::endl;
+				std::exit(EXIT_FAILURE);
+			}
+
 			std::string vertexSource{ std::istreambuf_iterator<char>(vertexFile), std::istreambuf_iterator<char>() };
 
 			auto compiled = compiler.CompileGlslToSpv(vertexSource, shaderc_glsl_vertex_shader, "basic.vert.glsl");
@@ -31,6 +50,11 @@ int main(int argc, char* argv[]) {
 
 		{
 			std::ifstream fragmentFile("basic.frag.glsl");
+			if (fragmentFile.fail()) {
+				std::cerr << "failed to open GLSL file" << std::endl;
+				std::exit(EXIT_FAILURE);
+			}
+
 			std::string fragmentSource{ std::istreambuf_iterator<char>(fragmentFile), std::istreambuf_iterator<char>() };
 
 			auto compiled = compiler.CompileGlslToSpv(fragmentSource, shaderc_glsl_fragment_shader, "basic.frag.glsl");
@@ -87,6 +111,10 @@ int main(int argc, char* argv[]) {
 	}
 
 	SDL_Quit();
+
+#ifdef _WIN32
+	SetConsoleOutputCP(cp);
+#endif
 
 	return 0;
 }

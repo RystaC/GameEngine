@@ -10,11 +10,15 @@
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <vector>
 
 #define STB_IMAGE_STATIC
 #define STB_IMAGE_IMPLEMENTATION
+#define STBI_ONLY_JPEG
+#define STBI_ONLY_PNG
+#define STBI_ONLY_BMP
 #include "stb_image.h"
 
 #ifdef _DEBUG
@@ -131,9 +135,15 @@ class GraphicsEngine {
 	void createDefaultRenderPass();
 	void createDefaultFramebuffers();
 
+	void createBuffer(std::size_t, VkBufferUsageFlags, VkBuffer&);
+	void createImage(VkFormat, const VkExtent3D&, VkImageUsageFlags, VkSampleCountFlagBits, VkImage&);
+	void createImageView(const VkImage&, VkFormat, const VkImageSubresourceRange&, VkImageView&);
+	template<typename T, std::enable_if_t<std::is_same_v<T, VkBuffer> || std::is_same_v<T, VkImage>, std::nullptr_t> = nullptr>
+	void allocateDeviceMemory(const T&, VkDeviceMemory&, VkMemoryPropertyFlags);
+
 	template<typename T>
 	void createVertexBuffer(const std::vector<T>&);
-	template<typename T>
+	template<typename T, std::enable_if_t<std::is_same_v<T, std::uint16_t> || std::is_same_v<T, std::uint32_t>, std::nullptr_t> = nullptr>
 	void createIndexBuffer(const std::vector<T>&);
 	template<typename T>
 	void createUniformBuffer(std::size_t);

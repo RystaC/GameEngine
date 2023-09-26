@@ -307,11 +307,11 @@ void GraphicsEngine::createDefaultRenderPass() {
 
 	VkRenderPassCreateInfo renderPassInfo{};
 	renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-	renderPassInfo.attachmentCount = attachmentDesc.size();
+	renderPassInfo.attachmentCount = static_cast<std::uint32_t>(attachmentDesc.size());
 	renderPassInfo.pAttachments = attachmentDesc.data();
 	renderPassInfo.subpassCount = 1;
 	renderPassInfo.pSubpasses = &subpassDesc;
-	renderPassInfo.dependencyCount = dependencies.size();
+	renderPassInfo.dependencyCount = static_cast<std::uint32_t>(dependencies.size());
 	renderPassInfo.pDependencies = dependencies.data();
 
 	VK_CHECK(vkCreateRenderPass(device_, &renderPassInfo, allocator, &defaultRenderPass_));
@@ -328,7 +328,7 @@ void GraphicsEngine::createDefaultFramebuffers() {
 		VkFramebufferCreateInfo framebufferInfo{};
 		framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
 		framebufferInfo.renderPass = defaultRenderPass_;
-		framebufferInfo.attachmentCount = attachmentViews.size();
+		framebufferInfo.attachmentCount = static_cast<std::uint32_t>(attachmentViews.size());
 		framebufferInfo.pAttachments = attachmentViews.data();
 		framebufferInfo.width = imageSize_.width;
 		framebufferInfo.height = imageSize_.height;
@@ -380,7 +380,7 @@ void GraphicsEngine::createVertexBuffer(const std::vector<T>& vertexData) {
 	vkUnmapMemory(device_, vertexBufferMemory_);
 }
 
-template<typename T>
+template<typename T, std::enable_if_t<std::is_same_v<T, std::uint16_t> || std::is_same_v<T, std::uint32_t>, std::nullptr_t>>
 void GraphicsEngine::createIndexBuffer(const std::vector<T>& indexData) {
 	VkBufferCreateInfo bufferInfo{};
 	bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -914,7 +914,8 @@ void GraphicsEngine::endRenderPass() {
 }
 
 void GraphicsEngine::initialize(SDL_Window* window, const char* applicationName, std::uint32_t applicationVersion, const VkExtent2D& imageSize) {
-	imageSize_ = imageSize;
+	imageSize_.width = imageSize.width;
+	imageSize_.height = imageSize.height;
 
 	std::uint32_t numInstanceExtensions{};
 	SDL_CHECK(SDL_Vulkan_GetInstanceExtensions(window, &numInstanceExtensions, nullptr));
