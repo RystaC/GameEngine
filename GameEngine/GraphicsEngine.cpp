@@ -461,7 +461,7 @@ void GraphicsEngine::createUniformBuffer(std::size_t numBuffers) {
 	}
 }
 
-void GraphicsEngine::createTextureImage(const std::vector<std::uint8_t>& imageData, VkExtent2D imageSize) {
+void GraphicsEngine::createTextureImage(const std::vector<std::uint8_t>& imageData, VkFormat format, VkExtent2D imageSize) {
 	VkImageCreateInfo imageInfo{};
 	imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
 	imageInfo.imageType = VK_IMAGE_TYPE_2D;
@@ -470,7 +470,7 @@ void GraphicsEngine::createTextureImage(const std::vector<std::uint8_t>& imageDa
 	imageInfo.extent.depth = 1;
 	imageInfo.mipLevels = 1;
 	imageInfo.arrayLayers = 1;
-	imageInfo.format = VK_FORMAT_R8G8B8A8_SRGB;
+	imageInfo.format = format;
 	imageInfo.tiling = VK_IMAGE_TILING_LINEAR;
 	imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 	imageInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT;
@@ -509,12 +509,12 @@ void GraphicsEngine::createTextureImage(const std::vector<std::uint8_t>& imageDa
 	vkUnmapMemory(device_, textureImageMemory_);
 }
 
-void GraphicsEngine::createTextureImageView() {
+void GraphicsEngine::createTextureImageView(VkFormat format) {
 	VkImageViewCreateInfo viewInfo{};
 	viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 	viewInfo.image = textureImage_;
 	viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-	viewInfo.format = VK_FORMAT_R8G8B8A8_SRGB;
+	viewInfo.format = format;
 	viewInfo.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
 
 	VK_CHECK(vkCreateImageView(device_, &viewInfo, allocator, &textureImageView_));
@@ -1011,19 +1011,29 @@ void GraphicsEngine::initialize(SDL_Window* window, const char* applicationName,
 	createUniformBuffer<UniformBufferObject>(defaultFramebuffers_.size());
 
 	{
-		std::int32_t texWidth, texHeight, texChannels;
-		stbi_uc* texRawData = stbi_load("texture.jpg", &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
-		if (!texRawData) {
-			std::cerr << "[initialize] failed to read texture" << std::endl;
-			std::exit(EXIT_FAILURE);
-		}
-		std::vector<std::uint8_t> texData(texRawData, texRawData + (texWidth * texHeight * 4));
-		stbi_image_free(texRawData);
+		//std::int32_t texWidth, texHeight, texChannels;
+		//stbi_uc* texRawData = stbi_load("texture.jpg", &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+		//if (!texRawData) {
+		//	std::cerr << "[initialize] failed to read texture" << std::endl;
+		//	std::exit(EXIT_FAILURE);
+		//}
+		//std::vector<std::uint8_t> texData(texRawData, texRawData + (texWidth * texHeight * 4));
+		//stbi_image_free(texRawData);
 
-		createTextureImage(texData, { static_cast<std::uint32_t>(texWidth), static_cast<std::uint32_t>(texHeight) });
+		//createTextureImage(texData, { static_cast<std::uint32_t>(texWidth), static_cast<std::uint32_t>(texHeight) });
+		//createTextureImageView();
+
+		std::uint32_t texWidth{}, texHeight{};
+		VkFormat texFormat{};
+		std::vector<std::uint8_t> texData{};
+
+		DDSLoader loader{};
+		loader.load("face2+1.dds", texWidth, texHeight, texFormat, texData);
+
+		createTextureImage(texData, texFormat, { texWidth, texHeight });
+		createTextureImageView(texFormat);
 	}
 
-	createTextureImageView();
 	createTextureSampler();
 
 	createDefaultDescriptorSetLayout();

@@ -2,11 +2,13 @@
 #include <SDL2/SDL_vulkan.h>
 #include <shaderc/shaderc.hpp>
 
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <vector>
 
 #include "GraphicsEngine.h"
+#include "GLSLCompiler.h"
 #include "PMXLoader.h"
 
 // fuck Windows
@@ -20,53 +22,14 @@ int main(int argc, char* argv[]) {
 	SetConsoleOutputCP(65001);
 #endif
 
-	PMXLoader loader{};
-	loader.load("miku.pmx");
+	//PMXLoader loader{};
+	//loader.load("miku.pmx");
+	//return 0;
 
-	return 0;
+	GLSLCompiler compiler{};
 
-	{
-		shaderc::Compiler compiler{};
-		shaderc::CompileOptions options{};
-		
-		{
-			std::ifstream vertexFile("basic.vert.glsl");
-			if (vertexFile.fail()) {
-				std::cerr << "failed to open GLSL file" << std::endl;
-				std::exit(EXIT_FAILURE);
-			}
-
-			std::string vertexSource{ std::istreambuf_iterator<char>(vertexFile), std::istreambuf_iterator<char>() };
-
-			auto compiled = compiler.CompileGlslToSpv(vertexSource, shaderc_glsl_vertex_shader, "basic.vert.glsl");
-			if (compiled.GetCompilationStatus() != shaderc_compilation_status_success) {
-				std::cerr << "GLSL compilation failed:" << std::endl << compiled.GetErrorMessage() << std::endl;
-				std::exit(EXIT_FAILURE);
-			}
-
-			std::ofstream vertexSpv("basic.vert.spv", std::ios::out | std::ios::binary);
-			for (const auto value : compiled) vertexSpv.write(reinterpret_cast<const char*>(&value), sizeof(std::uint32_t));
-		}
-
-		{
-			std::ifstream fragmentFile("basic.frag.glsl");
-			if (fragmentFile.fail()) {
-				std::cerr << "failed to open GLSL file" << std::endl;
-				std::exit(EXIT_FAILURE);
-			}
-
-			std::string fragmentSource{ std::istreambuf_iterator<char>(fragmentFile), std::istreambuf_iterator<char>() };
-
-			auto compiled = compiler.CompileGlslToSpv(fragmentSource, shaderc_glsl_fragment_shader, "basic.frag.glsl");
-			if (compiled.GetCompilationStatus() != shaderc_compilation_status_success) {
-				std::cerr << "GLSL compilation failed:" << std::endl << compiled.GetErrorMessage() << std::endl;
-				std::exit(EXIT_FAILURE);
-			}
-
-			std::ofstream fragmentSpv("basic.frag.spv", std::ios::out | std::ios::binary);
-			for (const auto value : compiled) fragmentSpv.write(reinterpret_cast<const char*>(&value), sizeof(std::uint32_t));
-		}
-	}
+	compiler.compile("basic.vert.glsl");
+	compiler.compile("basic.frag.glsl");
 
 	constexpr std::int32_t windowWidth = 640;
 	constexpr std::int32_t windowHeight = 480;

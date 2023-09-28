@@ -377,3 +377,6 @@ FodyWeavers.xsd
 
 # PMX 3D model file
 *.pmx
+
+# time stamp
+*.stamp

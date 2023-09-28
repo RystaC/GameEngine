@@ -21,6 +21,8 @@
 #define STBI_ONLY_BMP
 #include "stb_image.h"
 
+#include "DDSLoader.h"
+
 #ifdef _DEBUG
 #define VK_CHECK(x) if((x) != VK_SUCCESS) { std::cerr << "[" << __func__ << "] an error occurs in Vulkan" << std::endl; std::exit(EXIT_FAILURE); }
 #define SDL_CHECK(x) if((x) != SDL_TRUE) { std::cerr << "[" << __func__ << "] an error occurs in SDL" << std::endl; std::exit(EXIT_FAILURE); }
@@ -148,8 +150,8 @@ class GraphicsEngine {
 	template<typename T>
 	void createUniformBuffer(std::size_t);
 
-	void createTextureImage(const std::vector<std::uint8_t>&, VkExtent2D);
-	void createTextureImageView();
+	void createTextureImage(const std::vector<std::uint8_t>&, VkFormat, VkExtent2D);
+	void createTextureImageView(VkFormat);
 	void createTextureSampler();
 
 	void createShaderModule(const char*, const char*);

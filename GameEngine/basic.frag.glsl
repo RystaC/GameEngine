@@ -20,8 +20,8 @@ void main() {
 	float diffuse = clamp(dot(L, N), 0.0f, 1.0f);
 	float specular = pow(clamp(dot(H, N), 0.0f, 1.0f), 64.0f);
 
-	vec3 colorComponent = texture(texSampler, vTexCoord).xyz + vColor.xyz;
-	float alphaComponent = 1.0f;
+	vec3 colorComponent = texture(texSampler, vTexCoord).xyz;// +vColor.xyz;
+	float alphaComponent = texture(texSampler, vTexCoord).w;
 
 	color = vec4(ambient * colorComponent + diffuse * colorComponent + specular * vec3(1.0f), alphaComponent);
 }
