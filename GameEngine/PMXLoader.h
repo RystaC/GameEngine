@@ -5,15 +5,47 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <string>
 #include <string_view>
 #include <vector>
 
 #include "utf16to8.h"
 
-#define READ_FUNC(name, ...) void name(std::ifstream& ifs, __VA_ARGS__)
-
 #define UTF8_TEXT(text_buf) (const char*)(text_buf).data()
 #define UTF16_TEXT(text_buf) (const char*)utf16to8((text_buf)).data()
+
+struct PMXVertexAttribute {
+	glm::vec3 position;
+	glm::vec3 normal;
+	glm::vec2 uv;
+	glm::vec4 a_uv1, a_uv2, a_uv3, a_uv4;
+};
+
+struct PMXMaterialColor {
+	glm::vec4 diffuse;
+	glm::vec3 specular;
+	float specCoef;
+	glm::vec3 ambient;
+};
+
+struct PMXMaterial {
+	PMXMaterialColor color;
+
+	std::size_t textureIndex, sphereIndex;
+	std::uint8_t sphereModeFlag;
+
+	bool useSharedToon;
+	std::size_t toonIndex;
+
+	std::uint32_t indexCount, indexOffset;
+};
+
+struct PMXData {
+	std::vector<PMXVertexAttribute> vertices;
+	std::vector<std::uint16_t> indices;
+	std::vector<std::filesystem::path> texturePathTable;
+	std::vector<PMXMaterial> materials;
+};
 
 class PMXLoader {
 	// text encode
@@ -33,7 +65,9 @@ class PMXLoader {
 	using Float2 = glm::vec2;
 	using Float3 = glm::vec3;
 	using Float4 = glm::vec4;
-	using TextBuf = std::vector<Byte>;
+	// for UTF16
+	// TODO: for UTF8 
+	using TextBuf = std::vector<uShort>;
 	using BitFlag = Byte;
 
 	// generalize index type
@@ -58,11 +92,6 @@ class PMXLoader {
 	};
 
 	// vertex data
-	struct Attribute {
-		Float3 position;
-		Float3 normal;
-		Float2 uv;
-	};
 
 	enum class WeightType {
 		BDEF1 = 0,
@@ -210,6 +239,7 @@ class PMXLoader {
 	// fields
 
 	std::ifstream ifs;
+	std::filesystem::path parentPath;
 
 	Byte info[8];
 
@@ -217,10 +247,10 @@ class PMXLoader {
 
 	void readHeader();
 	void readModelInfo();
-	void readVertexData();
-	void readFaceData();
-	void readTextureData();
-	void readMaterialData();
+	void readVertexData(std::vector<PMXVertexAttribute>&);
+	void readFaceData(std::vector<std::uint16_t>&);
+	void readTextureData(std::vector<std::filesystem::path>&);
+	void readMaterialData(std::vector<PMXMaterial>&);
 	void readBoneData();
 	void readMorphData();
 	void readFrameData();
@@ -235,10 +265,10 @@ class PMXLoader {
 	void readTextBuf(TextBuf& textBuf) {
 		Int textSize{};
 		ifs.read((char*)&textSize, sizeof(Int));
-		textBuf.resize(textSize);
+		textBuf.resize(textSize / sizeof(uShort));
 		ifs.read((char*)textBuf.data(), sizeof(Byte) * textSize);
 	}
 
 public:
-	void load(const std::filesystem::path&);
+	void load(const std::filesystem::path&, std::vector<PMXVertexAttribute>& vertexData, std::vector<std::uint16_t>& indexData, std::vector<std::filesystem::path>& texturePathTable, std::vector<PMXMaterial>& materials);
 };

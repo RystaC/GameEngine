@@ -9,7 +9,6 @@
 
 #include "GraphicsEngine.h"
 #include "GLSLCompiler.h"
-#include "PMXLoader.h"
 
 // fuck Windows
 #ifdef _WIN32
@@ -22,17 +21,13 @@ int main(int argc, char* argv[]) {
 	SetConsoleOutputCP(65001);
 #endif
 
-	//PMXLoader loader{};
-	//loader.load("miku.pmx");
-	//return 0;
-
 	GLSLCompiler compiler{};
 
 	compiler.compile("basic.vert.glsl");
 	compiler.compile("basic.frag.glsl");
 
-	constexpr std::int32_t windowWidth = 640;
-	constexpr std::int32_t windowHeight = 480;
+	constexpr std::int32_t windowWidth = 1024;
+	constexpr std::int32_t windowHeight = 768;
 
 	if (SDL_Init(SDL_INIT_VIDEO) != 0) {
 		SDL_Log("failed to initialize SDL: %s", SDL_GetError());

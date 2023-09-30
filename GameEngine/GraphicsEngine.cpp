@@ -259,6 +259,7 @@ void GraphicsEngine::createDefaultRenderPass() {
 	colorAttachmentDesc.format = desiredFormat;
 	colorAttachmentDesc.samples = VK_SAMPLE_COUNT_1_BIT;
 	colorAttachmentDesc.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	//colorAttachmentDesc.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
 	colorAttachmentDesc.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 	colorAttachmentDesc.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 	colorAttachmentDesc.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
@@ -340,21 +341,68 @@ void GraphicsEngine::createDefaultFramebuffers() {
 	defaultFramebuffers_ = std::move(framebuffers);
 }
 
-template<typename T>
-void GraphicsEngine::createVertexBuffer(const std::vector<T>& vertexData) {
+void GraphicsEngine::createBuffer(std::size_t bufferSize, VkBufferUsageFlags usage, VkBuffer& buffer) {
+
 	VkBufferCreateInfo bufferInfo{};
 	bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-	bufferInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-	bufferInfo.size = sizeof(T) * vertexData.size();
+	bufferInfo.usage = usage;
+	bufferInfo.size = bufferSize;
 	bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-	VK_CHECK(vkCreateBuffer(device_, &bufferInfo, allocator, &vertexBuffer_));
+	VK_CHECK(vkCreateBuffer(device_, &bufferInfo, allocator, &buffer));
+}
+
+void GraphicsEngine::createImage2D(VkFormat format, const VkExtent3D& imageSize, VkImageUsageFlags usage, VkSampleCountFlagBits sampleCount, VkImage& image) {
+
+	VkImageCreateInfo imageInfo{};
+	imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+	imageInfo.imageType = VK_IMAGE_TYPE_2D;
+	imageInfo.extent = imageSize;
+	imageInfo.mipLevels = 1;
+	imageInfo.arrayLayers = 1;
+	imageInfo.format = format;
+	// TODO: use VK_IMAGE_TILING_OPTIMAL (staging buffer needed)
+	imageInfo.tiling = VK_IMAGE_TILING_LINEAR;
+	imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	imageInfo.usage = usage;
+	imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	imageInfo.samples = sampleCount;
+
+	VK_CHECK(vkCreateImage(device_, &imageInfo, allocator, &image));
+}
+
+void GraphicsEngine::createImageView2D(const VkImage & image, VkFormat format, const VkImageSubresourceRange & subresorceRange, VkImageView & imageView) {
+
+	VkImageViewCreateInfo imageViewInfo{};
+	imageViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+	imageViewInfo.image = image;
+	imageViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+	imageViewInfo.format = format;
+	imageViewInfo.components = {
+		VK_COMPONENT_SWIZZLE_R,
+		VK_COMPONENT_SWIZZLE_G,
+		VK_COMPONENT_SWIZZLE_B,
+		VK_COMPONENT_SWIZZLE_A,
+	};
+	imageViewInfo.subresourceRange = subresorceRange;
+
+	VK_CHECK(vkCreateImageView(device_, &imageViewInfo, allocator, &imageView));
+}
+
+template<typename T, std::enable_if_t<std::is_same_v<T, VkBuffer> || std::is_same_v<T, VkImage>, std::nullptr_t>>
+void GraphicsEngine::allocateDeviceMemory(const T& destObject, VkDeviceMemory& deviceMemory, VkMemoryPropertyFlags memoryPropertyFlags) {
 
 	VkMemoryRequirements memoryRequirements{};
-	vkGetBufferMemoryRequirements(device_, vertexBuffer_, &memoryRequirements);
+	if constexpr (std::is_same_v<T, VkBuffer>) {
+		vkGetBufferMemoryRequirements(device_, destObject, &memoryRequirements);
+	}
+	else if constexpr (std::is_same_v<T, VkImage>) {
+		vkGetImageMemoryRequirements(device_, destObject, &memoryRequirements);
+	}
+
 	uint32_t memoryTypeIndex = UINT32_MAX;
 	for (std::uint32_t i = 0; i < memoryProperties_.memoryTypeCount; ++i) {
-		if ((memoryProperties_.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) != 0) {
+		if (memoryProperties_.memoryTypes[i].propertyFlags & memoryPropertyFlags) {
 			memoryTypeIndex = i;
 			break;
 		}
@@ -369,155 +417,94 @@ void GraphicsEngine::createVertexBuffer(const std::vector<T>& vertexData) {
 	allocateInfo.allocationSize = memoryRequirements.size;
 	allocateInfo.memoryTypeIndex = memoryTypeIndex;
 
-	VK_CHECK(vkAllocateMemory(device_, &allocateInfo, allocator, &vertexBufferMemory_));
-	VK_CHECK(vkBindBufferMemory(device_, vertexBuffer_, vertexBufferMemory_, 0));
-
-	std::uint8_t* mappedMemory{};
-	VK_CHECK(vkMapMemory(device_, vertexBufferMemory_, 0, sizeof(T) * vertexData.size(), 0, reinterpret_cast<void**>(& mappedMemory)));
+	VK_CHECK(vkAllocateMemory(device_, &allocateInfo, allocator, &deviceMemory));
 	
-	std::memcpy(mappedMemory, vertexData.data(), sizeof(T) * vertexData.size());
-
-	vkUnmapMemory(device_, vertexBufferMemory_);
-}
-
-template<typename T, std::enable_if_t<std::is_same_v<T, std::uint16_t> || std::is_same_v<T, std::uint32_t>, std::nullptr_t>>
-void GraphicsEngine::createIndexBuffer(const std::vector<T>& indexData) {
-	VkBufferCreateInfo bufferInfo{};
-	bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-	bufferInfo.usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
-	bufferInfo.size = sizeof(T) * indexData.size();
-	bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-	VK_CHECK(vkCreateBuffer(device_, &bufferInfo, allocator, &indexBuffer_));
-
-	VkMemoryRequirements memoryRequirements{};
-	vkGetBufferMemoryRequirements(device_, indexBuffer_, &memoryRequirements);
-	uint32_t memoryTypeIndex = UINT32_MAX;
-	for (std::uint32_t i = 0; i < memoryProperties_.memoryTypeCount; ++i) {
-		if ((memoryProperties_.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) != 0) {
-			memoryTypeIndex = i;
-			break;
-		}
+	if constexpr (std::is_same_v<T, VkBuffer>) {
+		VK_CHECK(vkBindBufferMemory(device_, destObject, deviceMemory, 0));
 	}
-	if (memoryTypeIndex == UINT32_MAX) {
-		std::cerr << "[createIndexBuffer] failed to find memory for index buffer" << std::endl;
-		std::exit(EXIT_FAILURE);
+	else if constexpr (std::is_same_v<T, VkImage>) {
+		VK_CHECK(vkBindImageMemory(device_, destObject, deviceMemory, 0));
 	}
-
-	VkMemoryAllocateInfo allocateInfo{};
-	allocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-	allocateInfo.allocationSize = memoryRequirements.size;
-	allocateInfo.memoryTypeIndex = memoryTypeIndex;
-
-	VK_CHECK(vkAllocateMemory(device_, &allocateInfo, allocator, &indexBufferMemory_));
-	VK_CHECK(vkBindBufferMemory(device_, indexBuffer_, indexBufferMemory_, 0));
-
-	std::uint8_t* mappedMemory{};
-	VK_CHECK(vkMapMemory(device_, indexBufferMemory_, 0, sizeof(T) * indexData.size(), 0, reinterpret_cast<void**>(&mappedMemory)));
-
-	std::memcpy(mappedMemory, indexData.data(), sizeof(T) * indexData.size());
-
-	vkUnmapMemory(device_, indexBufferMemory_);
 }
 
 template<typename T>
-void GraphicsEngine::createUniformBuffer(std::size_t numBuffers) {
-	uniformBuffers_.resize(numBuffers);
-	uniformBuffersMemory_.resize(numBuffers);
-	uniformBuffersMapped_.resize(numBuffers);
+void GraphicsEngine::createVertexBuffer(const std::vector<T>& data, VertexBuffer<T>& buffer) {
 
-	for (auto i = 0; i < numBuffers; ++i) {
-		VkBufferCreateInfo bufferInfo{};
-		bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-		bufferInfo.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
-		bufferInfo.size = sizeof(T);
-		bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	auto bufferSize = sizeof(T) * data.size();
+	createBuffer(bufferSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, buffer.buffer);
 
-		VK_CHECK(vkCreateBuffer(device_, &bufferInfo, allocator, &uniformBuffers_[i]));
-
-		VkMemoryRequirements memoryRequirements{};
-		vkGetBufferMemoryRequirements(device_, uniformBuffers_[i], &memoryRequirements);
-		uint32_t memoryTypeIndex = UINT32_MAX;
-		for (std::uint32_t i = 0; i < memoryProperties_.memoryTypeCount; ++i) {
-			if ((memoryProperties_.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) != 0) {
-				memoryTypeIndex = i;
-				break;
-			}
-		}
-		if (memoryTypeIndex == UINT32_MAX) {
-			std::cerr << "[createIndexBuffer] failed to find memory for index buffer" << std::endl;
-			std::exit(EXIT_FAILURE);
-		}
-
-		VkMemoryAllocateInfo allocateInfo{};
-		allocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-		allocateInfo.allocationSize = memoryRequirements.size;
-		allocateInfo.memoryTypeIndex = memoryTypeIndex;
-
-		VK_CHECK(vkAllocateMemory(device_, &allocateInfo, allocator, &uniformBuffersMemory_[i]));
-		VK_CHECK(vkBindBufferMemory(device_, uniformBuffers_[i], uniformBuffersMemory_[i], 0));
-
-		VK_CHECK(vkMapMemory(device_, uniformBuffersMemory_[i], 0, sizeof(T), 0, reinterpret_cast<void**>(&uniformBuffersMapped_[i])));
-	}
-}
-
-void GraphicsEngine::createTextureImage(const std::vector<std::uint8_t>& imageData, VkFormat format, VkExtent2D imageSize) {
-	VkImageCreateInfo imageInfo{};
-	imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-	imageInfo.imageType = VK_IMAGE_TYPE_2D;
-	imageInfo.extent.width = imageSize.width;
-	imageInfo.extent.height = imageSize.height;
-	imageInfo.extent.depth = 1;
-	imageInfo.mipLevels = 1;
-	imageInfo.arrayLayers = 1;
-	imageInfo.format = format;
-	imageInfo.tiling = VK_IMAGE_TILING_LINEAR;
-	imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-	imageInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT;
-	imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-	imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-
-	VK_CHECK(vkCreateImage(device_, &imageInfo, allocator, &textureImage_));
-
-	VkMemoryRequirements memoryRequirements{};
-	vkGetImageMemoryRequirements(device_, textureImage_, &memoryRequirements);
-	uint32_t memoryTypeIndex = UINT32_MAX;
-	for (std::uint32_t i = 0; i < memoryProperties_.memoryTypeCount; ++i) {
-		if ((memoryProperties_.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) != 0) {
-			memoryTypeIndex = i;
-			break;
-		}
-	}
-	if (memoryTypeIndex == UINT32_MAX) {
-		std::cerr << "[createTextureImage] failed to find memory for texture image" << std::endl;
-		std::exit(EXIT_FAILURE);
-	}
-
-	VkMemoryAllocateInfo allocateInfo{};
-	allocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-	allocateInfo.allocationSize = memoryRequirements.size;
-	allocateInfo.memoryTypeIndex = memoryTypeIndex;
-
-	VK_CHECK(vkAllocateMemory(device_, &allocateInfo, allocator, &textureImageMemory_));
-	VK_CHECK(vkBindImageMemory(device_, textureImage_, textureImageMemory_, 0));
+	allocateDeviceMemory(buffer.buffer, buffer.memory, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
 
 	std::uint8_t* mappedMemory{};
-	VK_CHECK(vkMapMemory(device_, textureImageMemory_, 0, sizeof(std::uint8_t) * imageData.size(), 0, reinterpret_cast<void**>(&mappedMemory)));
+	VK_CHECK(vkMapMemory(device_, buffer.memory, 0, sizeof(T) * data.size(), 0, reinterpret_cast<void**>(&mappedMemory)));
 
-	std::memcpy(mappedMemory, imageData.data(), sizeof(std::uint8_t) * imageData.size());
+	std::memcpy(mappedMemory, data.data(), sizeof(T) * data.size());
 
-	vkUnmapMemory(device_, textureImageMemory_);
+	vkUnmapMemory(device_, buffer.memory);
 }
 
-void GraphicsEngine::createTextureImageView(VkFormat format) {
-	VkImageViewCreateInfo viewInfo{};
-	viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-	viewInfo.image = textureImage_;
-	viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-	viewInfo.format = format;
-	viewInfo.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+template<typename T, std::enable_if_t<std::is_same_v<T, std::uint16_t> || std::is_same_v<T, std::uint32_t>, std::nullptr_t>>
+void GraphicsEngine::createIndexBuffer(const std::vector<T>& data, IndexBuffer& buffer) {
 
-	VK_CHECK(vkCreateImageView(device_, &viewInfo, allocator, &textureImageView_));
+	if constexpr (std::is_same_v<T, std::uint16_t>) {
+		buffer.indexType = VK_INDEX_TYPE_UINT16;
+	}
+	else if constexpr (std::is_same_v<T, std::uint32_t>) {
+		buffer.indexType = VK_INDEX_TYPE_UINT32;
+	}
+
+	buffer.size = data.size();
+
+	auto bufferSize = sizeof(T) * data.size();
+	createBuffer(bufferSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT, buffer.buffer);
+
+	allocateDeviceMemory(buffer.buffer, buffer.memory, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
+
+	std::uint8_t* mappedMemory{};
+	VK_CHECK(vkMapMemory(device_, buffer.memory, 0, sizeof(T) * data.size(), 0, reinterpret_cast<void**>(&mappedMemory)));
+
+	std::memcpy(mappedMemory, data.data(), sizeof(T) * data.size());
+
+	vkUnmapMemory(device_, buffer.memory);
+}
+
+template<typename T>
+void GraphicsEngine::createUniformBuffer(UniformBuffer<T>& buffer) {
+
+	createBuffer(sizeof(T), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, buffer.buffer);
+
+	allocateDeviceMemory(buffer.buffer, buffer.memory, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
+
+	VK_CHECK(vkMapMemory(device_, buffer.memory, 0, sizeof(T), 0, reinterpret_cast<void**>(&buffer.pointer)));
+}
+
+template<typename T>
+void GraphicsEngine::createConstantUnifromBuffer(const T* data, UniformBuffer<T>& buffer) {
+
+	createBuffer(sizeof(T), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, buffer.buffer);
+
+	allocateDeviceMemory(buffer.buffer, buffer.memory, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
+
+	std::uint8_t* mappedMemory{};
+	VK_CHECK(vkMapMemory(device_, buffer.memory, 0, sizeof(T), 0, reinterpret_cast<void**>(&mappedMemory)));
+
+	std::memcpy(mappedMemory, data, sizeof(T));
+
+	vkUnmapMemory(device_, buffer.memory);
+}
+
+void GraphicsEngine::createTexture(const std::vector<std::uint8_t>& data, VkFormat format, const VkExtent3D& size, Texture& texture) {
+
+	createImage2D(format, size, VK_IMAGE_USAGE_SAMPLED_BIT, VK_SAMPLE_COUNT_1_BIT, texture.image);
+	allocateDeviceMemory(texture.image, texture.memory, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
+	createImageView2D(texture.image, format, { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 }, texture.view);
+
+	std::uint8_t* mappedMemory{};
+	VK_CHECK(vkMapMemory(device_, texture.memory, 0, sizeof(std::uint8_t) * data.size(), 0, reinterpret_cast<void**>(&mappedMemory)));
+
+	std::memcpy(mappedMemory, data.data(), sizeof(std::uint8_t) * data.size());
+
+	vkUnmapMemory(device_, texture.memory);
 }
 
 void GraphicsEngine::createTextureSampler() {
@@ -589,19 +576,37 @@ void GraphicsEngine::createShaderModule(const char* vertexSPIRVPath, const char*
 }
 
 void GraphicsEngine::createDefaultDescriptorSetLayout() {
-	VkDescriptorSetLayoutBinding uniformLayoutBinding{};
-	uniformLayoutBinding.binding = 0;
-	uniformLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-	uniformLayoutBinding.descriptorCount = 1;
-	uniformLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+	VkDescriptorSetLayoutBinding transformLayoutBinding{};
+	transformLayoutBinding.binding = 0;
+	transformLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	transformLayoutBinding.descriptorCount = 1;
+	transformLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
-	VkDescriptorSetLayoutBinding samplerLayoutBinding{};
-	samplerLayoutBinding.binding = 1;
-	samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-	samplerLayoutBinding.descriptorCount = 1;
-	samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+	VkDescriptorSetLayoutBinding materialLayoutBinding{};
+	materialLayoutBinding.binding = 1;
+	materialLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	materialLayoutBinding.descriptorCount = 1;
+	materialLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
-	std::array<VkDescriptorSetLayoutBinding, 2> bindings{ uniformLayoutBinding, samplerLayoutBinding };
+	VkDescriptorSetLayoutBinding textureLayoutBinding{};
+	textureLayoutBinding.binding = 2;
+	textureLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	textureLayoutBinding.descriptorCount = 1;
+	textureLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+	VkDescriptorSetLayoutBinding sphereLayoutBinding{};
+	sphereLayoutBinding.binding = 3;
+	sphereLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	sphereLayoutBinding.descriptorCount = 1;
+	sphereLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+	VkDescriptorSetLayoutBinding toonLayoutBinding{};
+	toonLayoutBinding.binding = 4;
+	toonLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	toonLayoutBinding.descriptorCount = 1;
+	toonLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+	std::array<VkDescriptorSetLayoutBinding, 5> bindings{ transformLayoutBinding, materialLayoutBinding, textureLayoutBinding, sphereLayoutBinding, toonLayoutBinding };
 
 	VkDescriptorSetLayoutCreateInfo layoutInfo{};
 	layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -611,72 +616,122 @@ void GraphicsEngine::createDefaultDescriptorSetLayout() {
 	VK_CHECK(vkCreateDescriptorSetLayout(device_, &layoutInfo, allocator, &defaultDescriptorSetLayout_));
 }
 
-void GraphicsEngine::createDefaultDescriptorPool(std::size_t numDescriptors) {
-	VkDescriptorPoolSize uniformPoolSize{};
-	uniformPoolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-	uniformPoolSize.descriptorCount = static_cast<std::uint32_t>(numDescriptors);
+void GraphicsEngine::createDefaultDescriptorPool(std::uint32_t descriptorSetCount) {
+	VkDescriptorPoolSize transformPoolSize{};
+	transformPoolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	transformPoolSize.descriptorCount = 1;
 
-	VkDescriptorPoolSize samplderPoolSize{};
-	samplderPoolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-	samplderPoolSize.descriptorCount = static_cast<std::uint32_t>(numDescriptors);
+	VkDescriptorPoolSize materialPoolSize{};
+	materialPoolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	materialPoolSize.descriptorCount = 1;
 
-	std::array<VkDescriptorPoolSize, 2> poolSizes{ uniformPoolSize, samplderPoolSize };
+	VkDescriptorPoolSize texturePoolSize{};
+	texturePoolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	texturePoolSize.descriptorCount = 1;
+
+	VkDescriptorPoolSize spherePoolSize{};
+	spherePoolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	spherePoolSize.descriptorCount = 1;
+
+	VkDescriptorPoolSize toonPoolSize{};
+	toonPoolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	toonPoolSize.descriptorCount = 1;
+
+	std::array<VkDescriptorPoolSize, 5> poolSizes{ transformPoolSize, materialPoolSize, texturePoolSize, spherePoolSize, toonPoolSize };
 
 	VkDescriptorPoolCreateInfo poolInfo{};
 	poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
 	poolInfo.poolSizeCount = static_cast<std::uint32_t>(poolSizes.size());
 	poolInfo.pPoolSizes = poolSizes.data();
-	poolInfo.maxSets = static_cast<std::uint32_t>(numDescriptors);
+	poolInfo.maxSets = descriptorSetCount;
 
 	VK_CHECK(vkCreateDescriptorPool(device_, &poolInfo, allocator, &defaultDescriptorPool_));
 }
 
-void GraphicsEngine::createDefaultDescriptorSets(std::size_t numDescriptorSets) {
-	std::vector<VkDescriptorSetLayout> layouts(numDescriptorSets, defaultDescriptorSetLayout_);
+void GraphicsEngine::createDefaultDescriptorSets(const UniformBuffer<MaterialBufferObject>& materialBuffer, const Texture& materialTexture, const Texture& sphereTexture, const Texture& toonTexture, VkDescriptorSet& descriptorSet) {
+	VkDescriptorSetLayout layout = defaultDescriptorSetLayout_;
 
 	VkDescriptorSetAllocateInfo allocateInfo{};
 	allocateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
 	allocateInfo.descriptorPool = defaultDescriptorPool_;
-	allocateInfo.descriptorSetCount = static_cast<std::uint32_t>(numDescriptorSets);
-	allocateInfo.pSetLayouts = layouts.data();
+	allocateInfo.descriptorSetCount = 1;
+	allocateInfo.pSetLayouts = &layout;
 
-	defaultDescriptorSets_.resize(numDescriptorSets);
+	VK_CHECK(vkAllocateDescriptorSets(device_, &allocateInfo, &descriptorSet));
 
-	VK_CHECK(vkAllocateDescriptorSets(device_, &allocateInfo, defaultDescriptorSets_.data()));
+	VkDescriptorBufferInfo transformBufferInfo{};
+	transformBufferInfo.buffer = transformBuffer_.buffer;
+	transformBufferInfo.offset = 0;
+	transformBufferInfo.range = sizeof(decltype(transformBuffer_)::type);
 
-	for (auto i = 0; i < numDescriptorSets; ++i) {
-		VkDescriptorBufferInfo bufferInfo{};
-		bufferInfo.buffer = uniformBuffers_[i];
-		bufferInfo.offset = 0;
-		bufferInfo.range = sizeof(UniformBufferObject);
+	VkDescriptorBufferInfo materialBufferInfo{};
+	materialBufferInfo.buffer = materialBuffer.buffer;
+	materialBufferInfo.offset = 0;
+	materialBufferInfo.range = sizeof(MaterialBufferObject);
 
-		VkDescriptorImageInfo imageInfo{};
-		imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		imageInfo.imageView = textureImageView_;
-		imageInfo.sampler = textureSampler_;
+	VkDescriptorImageInfo textureInfo{};
+	textureInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	textureInfo.imageView = materialTexture.view;
+	textureInfo.sampler = textureSampler_;
 
-		VkWriteDescriptorSet descriptorUniformWrite{};
-		descriptorUniformWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		descriptorUniformWrite.dstSet = defaultDescriptorSets_[i];
-		descriptorUniformWrite.dstBinding = 0;
-		descriptorUniformWrite.dstArrayElement = 0;
-		descriptorUniformWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-		descriptorUniformWrite.descriptorCount = 1;
-		descriptorUniformWrite.pBufferInfo = &bufferInfo;
+	VkDescriptorImageInfo sphereInfo{};
+	sphereInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	sphereInfo.imageView = sphereTexture.view;
+	sphereInfo.sampler = textureSampler_;
 
-		VkWriteDescriptorSet descriptorSamplerWrite{};
-		descriptorSamplerWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		descriptorSamplerWrite.dstSet = defaultDescriptorSets_[i];
-		descriptorSamplerWrite.dstBinding = 1;
-		descriptorSamplerWrite.dstArrayElement = 0;
-		descriptorSamplerWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-		descriptorSamplerWrite.descriptorCount = 1;
-		descriptorSamplerWrite.pImageInfo = &imageInfo;
+	VkDescriptorImageInfo toonInfo{};
+	toonInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	toonInfo.imageView = toonTexture.view;
+	toonInfo.sampler = textureSampler_;
 
-		std::array<VkWriteDescriptorSet, 2> descriptorWrites{ descriptorUniformWrite, descriptorSamplerWrite };
+	VkWriteDescriptorSet descriptorTransformWrite{};
+	descriptorTransformWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	descriptorTransformWrite.dstSet = descriptorSet;
+	descriptorTransformWrite.dstBinding = 0;
+	descriptorTransformWrite.dstArrayElement = 0;
+	descriptorTransformWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	descriptorTransformWrite.descriptorCount = 1;
+	descriptorTransformWrite.pBufferInfo = &transformBufferInfo;
 
-		vkUpdateDescriptorSets(device_, static_cast<std::uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
-	}
+	VkWriteDescriptorSet descriptorMaterialWrite{};
+	descriptorMaterialWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	descriptorMaterialWrite.dstSet = descriptorSet;
+	descriptorMaterialWrite.dstBinding = 1;
+	descriptorMaterialWrite.dstArrayElement = 0;
+	descriptorMaterialWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	descriptorMaterialWrite.descriptorCount = 1;
+	descriptorMaterialWrite.pBufferInfo = &materialBufferInfo;
+
+	VkWriteDescriptorSet descriptorTextureWrite{};
+	descriptorTextureWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	descriptorTextureWrite.dstSet = descriptorSet;
+	descriptorTextureWrite.dstBinding = 2;
+	descriptorTextureWrite.dstArrayElement = 0;
+	descriptorTextureWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	descriptorTextureWrite.descriptorCount = 1;
+	descriptorTextureWrite.pImageInfo = &textureInfo;
+
+	VkWriteDescriptorSet descriptorSphereWrite{};
+	descriptorSphereWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	descriptorSphereWrite.dstSet = descriptorSet;
+	descriptorSphereWrite.dstBinding = 3;
+	descriptorSphereWrite.dstArrayElement = 0;
+	descriptorSphereWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	descriptorSphereWrite.descriptorCount = 1;
+	descriptorSphereWrite.pImageInfo = &sphereInfo;
+
+	VkWriteDescriptorSet descriptorToonWrite{};
+	descriptorToonWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	descriptorToonWrite.dstSet = descriptorSet;
+	descriptorToonWrite.dstBinding = 4;
+	descriptorToonWrite.dstArrayElement = 0;
+	descriptorToonWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	descriptorToonWrite.descriptorCount = 1;
+	descriptorToonWrite.pImageInfo = &toonInfo;
+
+	std::array<VkWriteDescriptorSet, 5> descriptorWrites{ descriptorTransformWrite, descriptorMaterialWrite, descriptorTextureWrite, descriptorSphereWrite, descriptorToonWrite };
+
+	vkUpdateDescriptorSets(device_, static_cast<std::uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 }
 
 void GraphicsEngine::createDefaultPipelineLayout() {
@@ -700,14 +755,17 @@ void GraphicsEngine::createDefaultGraphicsPipeline() {
 	stageInfo[1].pName = "main";
 
 	std::array<VkVertexInputBindingDescription, 1> inputBindingDesc = {
-		VkVertexInputBindingDescription{0, sizeof(VertexData), VK_VERTEX_INPUT_RATE_VERTEX},
+	VkVertexInputBindingDescription{0, sizeof(PMXVertexAttribute), VK_VERTEX_INPUT_RATE_VERTEX},
 	};
 
-	std::array<VkVertexInputAttributeDescription, 4> inputAttributeDesc = {
-		VkVertexInputAttributeDescription{0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(VertexData, position)},
-		VkVertexInputAttributeDescription{1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(VertexData, normal)},
-		VkVertexInputAttributeDescription{2, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(VertexData, texCoord)},
-		VkVertexInputAttributeDescription{3, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(VertexData, color)},
+	std::array<VkVertexInputAttributeDescription, 7> inputAttributeDesc = {
+		VkVertexInputAttributeDescription{0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(PMXVertexAttribute, position)},
+		VkVertexInputAttributeDescription{1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(PMXVertexAttribute, normal)},
+		VkVertexInputAttributeDescription{2, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(PMXVertexAttribute, uv)},
+		VkVertexInputAttributeDescription{3, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(PMXVertexAttribute, a_uv1)},
+		VkVertexInputAttributeDescription{4, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(PMXVertexAttribute, a_uv2)},
+		VkVertexInputAttributeDescription{5, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(PMXVertexAttribute, a_uv3)},
+		VkVertexInputAttributeDescription{6, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(PMXVertexAttribute, a_uv4)},
 	};
 
 	VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
@@ -736,7 +794,7 @@ void GraphicsEngine::createDefaultGraphicsPipeline() {
 	rasterizationInfo.depthClampEnable = VK_FALSE;
 	rasterizationInfo.rasterizerDiscardEnable = VK_FALSE;
 	rasterizationInfo.polygonMode = VK_POLYGON_MODE_FILL;
-	rasterizationInfo.cullMode = VK_CULL_MODE_BACK_BIT;
+	rasterizationInfo.cullMode = VK_CULL_MODE_NONE;
 	rasterizationInfo.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
 	rasterizationInfo.depthBiasEnable = VK_FALSE;
 	rasterizationInfo.lineWidth = 1.0f;
@@ -749,8 +807,14 @@ void GraphicsEngine::createDefaultGraphicsPipeline() {
 	multisampleInfo.alphaToOneEnable = VK_FALSE;
 
 	VkPipelineColorBlendAttachmentState colorBlendAttachment{};
-	colorBlendAttachment.blendEnable = VK_FALSE;
+	colorBlendAttachment.blendEnable = VK_TRUE;
 	colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_A_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_R_BIT;
+	colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+	colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+	colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
+	colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+	colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+	colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
 
 	VkPipelineColorBlendStateCreateInfo colorBlendInfo{};
 	colorBlendInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
@@ -893,7 +957,7 @@ void GraphicsEngine::resetFence() {
 
 void GraphicsEngine::beginRenderPass() {
 	VkClearValue colorClearValue{}, depthClearValue{};
-	colorClearValue.color = { 0.0f, 0.0f, 0.0f, 1.0f };
+	colorClearValue.color = { 0.8f, 0.8f, 0.8f, 1.0f };
 	depthClearValue.depthStencil = { 1.0f, 0 };
 
 	std::array<VkClearValue, 2> clearValues{ colorClearValue, depthClearValue };
@@ -950,95 +1014,74 @@ void GraphicsEngine::initialize(SDL_Window* window, const char* applicationName,
 	createDefaultRenderPass();
 	createDefaultFramebuffers();
 
-	std::vector<VertexData> vertexData = {
-		// -x
-		{glm::vec3(-1.0f, 1.0f, -1.0f), glm::vec3(-1.0f, 0.0f, 0.0f), glm::vec2(0.0f, 0.0f), glm::vec4(1.0f, 0.0f, 0.0f, 1.0f)},
-		{glm::vec3(-1.0f, -1.0f, -1.0f), glm::vec3(-1.0f, 0.0f, 0.0f), glm::vec2(0.0f, 1.0f), glm::vec4(0.0f, 1.0f, 0.0f, 1.0f)},
-		{glm::vec3(-1.0f, 1.0f, 1.0f), glm::vec3(-1.0f, 0.0f, 0.0f), glm::vec2(1.0f, 0.0f), glm::vec4(0.0f, 0.0f, 1.0f, 1.0f)},
-		{glm::vec3(-1.0f, -1.0f, 1.0f), glm::vec3(-1.0f, 0.0f, 0.0f), glm::vec2(1.0f, 1.0f), glm::vec4(1.0f)},
-		// +x
-		{glm::vec3(1.0f, 1.0f, 1.0f), glm::vec3(1.0f, 0.0f, 0.0f), glm::vec2(0.0f, 0.0f), glm::vec4(1.0f, 0.0f, 0.0f, 1.0f)},
-		{glm::vec3(1.0f, -1.0f, 1.0f), glm::vec3(1.0f, 0.0f, 0.0f), glm::vec2(0.0f, 1.0f), glm::vec4(0.0f, 1.0f, 0.0f, 1.0f)},
-		{glm::vec3(1.0f, 1.0f, -1.0f), glm::vec3(1.0f, 0.0f, 0.0f), glm::vec2(1.0f, 0.0f), glm::vec4(0.0f, 0.0f, 1.0f, 1.0f)},
-		{glm::vec3(1.0f, -1.0f, -1.0f), glm::vec3(1.0f, 0.0f, 0.0f), glm::vec2(1.0f, 1.0f), glm::vec4(1.0f)},
-		// -y
-		{glm::vec3(-1.0f, -1.0f, 1.0f), glm::vec3(0.0f, -1.0f, 0.0f), glm::vec2(0.0f, 0.0f), glm::vec4(1.0f, 0.0f, 0.0f, 1.0f)},
-		{glm::vec3(-1.0f, -1.0f, -1.0f), glm::vec3(0.0f, -1.0f, 0.0f), glm::vec2(0.0f, 1.0f), glm::vec4(0.0f, 1.0f, 0.0f, 1.0f)},
-		{glm::vec3(1.0f, -1.0f, 1.0f), glm::vec3(0.0f, -1.0f, 0.0f), glm::vec2(1.0f, 0.0f), glm::vec4(0.0f, 0.0f, 1.0f, 1.0f)},
-		{glm::vec3(1.0f, -1.0f, -1.0f), glm::vec3(0.0f, -1.0f, 0.0f), glm::vec2(1.0f, 1.0f), glm::vec4(1.0f)},
-		// +y
-		{glm::vec3(-1.0f, 1.0f, -1.0f), glm::vec3(0.0f, 1.0f, 0.0f), glm::vec2(0.0f, 0.0f), glm::vec4(1.0f, 0.0f, 0.0f, 1.0f)},
-		{glm::vec3(-1.0f, 1.0f, 1.0f), glm::vec3(0.0f, 1.0f, 0.0f), glm::vec2(0.0f, 1.0f), glm::vec4(0.0f, 1.0f, 0.0f, 1.0f)},
-		{glm::vec3(1.0f, 1.0f, -1.0f), glm::vec3(0.0f, 1.0f, 0.0f),glm::vec2(1.0f, 0.0f),  glm::vec4(0.0f, 0.0f, 1.0f, 1.0f)},
-		{glm::vec3(1.0f, 1.0f, 1.0f), glm::vec3(0.0f, 1.0f, 0.0f), glm::vec2(1.0f, 1.0f), glm::vec4(1.0f)},
-		// -z
-		{glm::vec3(1.0f, 1.0f, -1.0f), glm::vec3(0.0f, 0.0f, -1.0f), glm::vec2(0.0f, 0.0f), glm::vec4(1.0f, 0.0f, 0.0f, 1.0f)},
-		{glm::vec3(1.0f, -1.0f, -1.0f), glm::vec3(0.0f, 0.0f, -1.0f), glm::vec2(0.0f, 1.0f), glm::vec4(0.0f, 1.0f, 0.0f, 1.0f)},
-		{glm::vec3(-1.0f, 1.0f, -1.0f), glm::vec3(0.0f, 0.0f, -1.0f), glm::vec2(1.0f, 0.0f), glm::vec4(0.0f, 0.0f, 1.0f, 1.0f)},
-		{glm::vec3(-1.0f, -1.0f, -1.0f), glm::vec3(0.0f, 0.0f, -1.0f), glm::vec2(1.0f, 1.0f), glm::vec4(1.0f)},
-		// +z
-		{glm::vec3(-1.0f, 1.0f, 1.0f), glm::vec3(0.0f, 0.0f, 1.0f), glm::vec2(0.0f, 0.0f), glm::vec4(1.0f, 0.0f, 0.0f, 1.0f)},
-		{glm::vec3(-1.0f, -1.0f, 1.0f), glm::vec3(0.0f, 0.0f, 1.0f), glm::vec2(0.0f, 1.0f), glm::vec4(0.0f, 1.0f, 0.0f, 1.0f)},
-		{glm::vec3(1.0f, 1.0f, 1.0f), glm::vec3(0.0f, 0.0f, 1.0f), glm::vec2(1.0f, 0.0f), glm::vec4(0.0f, 0.0f, 1.0f, 1.0f)},
-		{glm::vec3(1.0f, -1.0f, 1.0f), glm::vec3(0.0f, 0.0f, 1.0f), glm::vec2(1.0f, 1.0f), glm::vec4(1.0f)},
-	};
-	createVertexBuffer(vertexData);
+	PMXLoader loader{};
+	std::vector<PMXVertexAttribute> vertexData{};
+	std::vector<uint16_t> indexData{};
+	std::vector<std::filesystem::path> texturePathTable{};
+	std::vector<PMXMaterial> materials{};
+	loader.load("assets\\Tda式改変ミク　JKStyle\\Tda式改変ミク　JKStyle.pmx", vertexData, indexData, texturePathTable, materials);
+	//loader.load("assets\\パイモン\\パイモン.pmx", vertexData, indexData, texturePathTable, materials);
+	//loader.load("assets\\蛍\\蛍.pmx", vertexData, indexData, texturePathTable, materials);
 
-	std::vector<std::uint16_t> indexData = {
-		// -x
-		0, 1, 2,
-		2, 1, 3,
-		// +x
-		4, 5, 6,
-		6, 5, 7,
-		// -y
-		8, 9, 10,
-		10, 9, 11,
-		// +y
-		12, 13, 14,
-		14, 13, 15,
-		// -z
-		16, 17, 18,
-		18, 17, 19,
-		// +z
-		20, 21, 22,
-		22, 21, 23,
-	};
-	createIndexBuffer(indexData);
+	textures_.resize(texturePathTable.size());
+	for (auto i = 0; i < texturePathTable.size(); ++i) {
+		//std::cout << texturePathTable[i] << std::endl;
+		TexLoader loader{};
+		VkExtent3D imageSize{};
+		VkFormat imageFormat{};
+		std::vector<std::uint8_t> imageData{};
+		if (loader.load(texturePathTable[i], imageSize, imageFormat, imageData)) {
+			std::cout << "success" << std::endl;
+			createTexture(imageData, imageFormat, imageSize, textures_[i]);
+		}
+		else {
+			std::cout << "failure" << std::endl;
+			std::exit(EXIT_FAILURE);
+		}
+	}
+
+	materialBuffers_.resize(materials.size());
+
+	for (auto i = 0; i < materials.size(); ++i) {
+		std::cout << "material #" << i << std::endl;
+		std::cout << "texture index:" << materials[i].textureIndex << std::endl;
+		std::cout << "sphere index: " << materials[i].sphereIndex << std::endl;
+		std::cout << "toon index: " << materials[i].toonIndex << std::endl << std::endl;
+		MaterialBufferObject materialBufferObject{};
+		materialBufferObject.diffuse = materials[i].color.diffuse;
+		materialBufferObject.specular = materials[i].color.specular;
+		materialBufferObject.specCoef = materials[i].color.specCoef;
+		materialBufferObject.ambient = materials[i].color.ambient;
+		materialBufferObject.isTextureUsed = (static_cast<std::int8_t>(materials[i].textureIndex) >= 0);
+		materialBufferObject.isSphereUsed = (static_cast<std::int8_t>(materials[i].sphereIndex) >= 0);
+		materialBufferObject.isToonUsed = (static_cast<std::int8_t>(materials[i].toonIndex) >= 0);
+		std::cout << std::boolalpha << materialBufferObject.isToonUsed << std::endl;
+		createConstantUnifromBuffer(&materialBufferObject, materialBuffers_[i]);
+	}
+
+	numIndices_ = static_cast<std::uint32_t>(indexData.size());
+	materials_ = std::move(materials);
+
+	createVertexBuffer(vertexData, vertexBuffer_);
+	createIndexBuffer(indexData, indexBuffer_);
 
 	createShaderModule("basic.vert.spv", "basic.frag.spv");
 
-	createUniformBuffer<UniformBufferObject>(defaultFramebuffers_.size());
-
-	{
-		//std::int32_t texWidth, texHeight, texChannels;
-		//stbi_uc* texRawData = stbi_load("texture.jpg", &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
-		//if (!texRawData) {
-		//	std::cerr << "[initialize] failed to read texture" << std::endl;
-		//	std::exit(EXIT_FAILURE);
-		//}
-		//std::vector<std::uint8_t> texData(texRawData, texRawData + (texWidth * texHeight * 4));
-		//stbi_image_free(texRawData);
-
-		//createTextureImage(texData, { static_cast<std::uint32_t>(texWidth), static_cast<std::uint32_t>(texHeight) });
-		//createTextureImageView();
-
-		std::uint32_t texWidth{}, texHeight{};
-		VkFormat texFormat{};
-		std::vector<std::uint8_t> texData{};
-
-		DDSLoader loader{};
-		loader.load("face2+1.dds", texWidth, texHeight, texFormat, texData);
-
-		createTextureImage(texData, texFormat, { texWidth, texHeight });
-		createTextureImageView(texFormat);
-	}
+	createUniformBuffer(transformBuffer_);
 
 	createTextureSampler();
 
+	defaultDescriptorSets_.resize(materials_.size());
+
 	createDefaultDescriptorSetLayout();
-	createDefaultDescriptorPool(defaultFramebuffers_.size());
-	createDefaultDescriptorSets(defaultFramebuffers_.size());
+	createDefaultDescriptorPool(materials_.size());
+	for (auto i = 0; i < materials_.size(); ++i) {
+		auto& texture = static_cast<std::int8_t>(materials_[i].textureIndex) != -1 ? textures_[materials_[i].textureIndex] : textures_[0];
+		auto& sphere = static_cast<std::int8_t>(materials_[i].sphereIndex) != -1 ? textures_[materials_[i].sphereIndex] : textures_[0];
+		auto& toon = static_cast<std::int8_t>(materials_[i].toonIndex) != -1 ? textures_[materials_[i].toonIndex] : textures_[0];
+
+		createDefaultDescriptorSets(materialBuffers_[i], texture, sphere, toon, defaultDescriptorSets_[i]);
+	}
 
 	createDefaultPipelineLayout();
 	createDefaultGraphicsPipeline();
@@ -1049,28 +1092,34 @@ void GraphicsEngine::initialize(SDL_Window* window, const char* applicationName,
 void GraphicsEngine::draw() {
 	std::size_t offset = 0;
 
-	auto model = glm::rotate(glm::mat4(1.0f), glm::radians(static_cast<float>(frame_)), glm::vec3(1.0f, 0.0f, 0.0f));
-	model *= glm::rotate(glm::mat4(1.0f), glm::radians(static_cast<float>(frame_ * 2)), glm::vec3(0.0f, 0.0f, 1.0f));
+	//auto model = glm::rotate(glm::mat4(1.0f), glm::radians(static_cast<float>(frame_)), glm::vec3(1.0f, 0.0f, 0.0f));
+	//model *= glm::rotate(glm::mat4(1.0f), glm::radians(static_cast<float>(frame_ * 2)), glm::vec3(0.0f, 0.0f, 1.0f));
+	//auto model = glm::mat4(1.0f);
+	auto model = glm::rotate(glm::mat4(1.0f), glm::radians(static_cast<float>(frame_)), glm::vec3(0.0f, 1.0f, 0.0f));
 	++frame_;
-	float cameraLength = 10.0f;
-	auto view = glm::lookAt(glm::vec3(cameraLength * glm::cos(glm::radians(static_cast<float>(frame_))), 0.0f, cameraLength * glm::sin(glm::radians(static_cast<float>(frame_)))), glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+	float cameraLength = 30.0f;
+	//auto view = glm::lookAt(glm::vec3(cameraLength * glm::cos(glm::radians(static_cast<float>(frame_))), 0.0f, cameraLength * glm::sin(glm::radians(static_cast<float>(frame_)))), glm::vec3(0.0f, 10.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+	auto view = glm::lookAt(glm::vec3(0.0f, 10.0f, -cameraLength), glm::vec3(0.0f, 10.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+
 	auto projection = glm::perspective(glm::radians(45.0f), static_cast<float>(imageSize_.width) / imageSize_.height, 0.1f, 100.0f);
 	projection[1][1] *= -1;
 
 	auto normalMatrix = glm::transpose(glm::inverse(model));
 
-	UniformBufferObject uniformBufferObject{ model, view, projection, normalMatrix };
+	TransformBufferObject transformBufferObject{ model, view, projection, normalMatrix };
 
-	std::memcpy(uniformBuffersMapped_[currentFrameIndex_], &uniformBufferObject, sizeof(UniformBufferObject));
+	std::memcpy(transformBuffer_.pointer, &transformBufferObject, sizeof(decltype(transformBufferObject)));
 
 	beginCommand();
 	beginRenderPass();
 
 	vkCmdBindPipeline(commandBuffer_, VK_PIPELINE_BIND_POINT_GRAPHICS, defaultGraphicsPipeline_);
-	vkCmdBindVertexBuffers(commandBuffer_, 0, 1, &vertexBuffer_, &offset);
-	vkCmdBindIndexBuffer(commandBuffer_, indexBuffer_, 0, VK_INDEX_TYPE_UINT16);
-	vkCmdBindDescriptorSets(commandBuffer_, VK_PIPELINE_BIND_POINT_GRAPHICS, defaultPipelineLayout_, 0, 1, &defaultDescriptorSets_[currentFrameIndex_], 0, nullptr);
-	vkCmdDrawIndexed(commandBuffer_, 36, 1, 0, 0, 0);
+	vkCmdBindVertexBuffers(commandBuffer_, 0, 1, &vertexBuffer_.buffer, &offset);
+	vkCmdBindIndexBuffer(commandBuffer_, indexBuffer_.buffer, 0, indexBuffer_.indexType);
+	for (auto i = 0; i < materials_.size(); ++i) {
+		vkCmdBindDescriptorSets(commandBuffer_, VK_PIPELINE_BIND_POINT_GRAPHICS, defaultPipelineLayout_, 0, 1, &defaultDescriptorSets_[i], 0, nullptr);
+		vkCmdDrawIndexed(commandBuffer_, materials_[i].indexCount, 1, materials_[i].indexOffset, 0, 0);
+	}
 
 	endRenderPass();
 	endCommand();
@@ -1079,7 +1128,6 @@ void GraphicsEngine::draw() {
 
 	switch (waitFence()) {
 	case VK_SUCCESS:
-		present();
 		break;
 	case VK_TIMEOUT:
 		std::cerr << "[draw] command execution timed out" << std::endl;
@@ -1089,6 +1137,8 @@ void GraphicsEngine::draw() {
 		break;
 	}
 	resetFence();
+
+	present();
 
 	acquireNextImage();
 }

@@ -114,6 +114,7 @@
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalDependencies>SDL2.lib;SDL2main.lib;vulkan-1.lib;shaderc_sharedd.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <IgnoreSpecificDefaultLibraries>msvcrt.lib;%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -138,6 +139,7 @@
     <ClCompile Include="GraphicsEngine.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="PMXLoader.cpp" />
+    <ClCompile Include="TexLoader.cpp" />
     <ClCompile Include="utf16to8.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -146,6 +148,7 @@
     <ClInclude Include="GraphicsEngine.h" />
     <ClInclude Include="PMXLoader.h" />
     <ClInclude Include="stb_image.h" />
+    <ClInclude Include="TexLoader.h" />
     <ClInclude Include="utf16to8.h" />
   </ItemGroup>
   <ItemGroup>

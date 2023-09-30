@@ -380,3 +380,6 @@ FodyWeavers.xsd
 
 # time stamp
 *.stamp
+
+# assets
+assets/

@@ -14,41 +14,33 @@
 #include <unordered_map>
 #include <vector>
 
-#define STB_IMAGE_STATIC
-#define STB_IMAGE_IMPLEMENTATION
-#define STBI_ONLY_JPEG
-#define STBI_ONLY_PNG
-#define STBI_ONLY_BMP
-#include "stb_image.h"
+#include "TexLoader.h"
 
-#include "DDSLoader.h"
+#include "PMXLoader.h"
 
 #ifdef _DEBUG
-#define VK_CHECK(x) if((x) != VK_SUCCESS) { std::cerr << "[" << __func__ << "] an error occurs in Vulkan" << std::endl; std::exit(EXIT_FAILURE); }
+#define VK_CHECK(x) if((x) != VK_SUCCESS) { std::cerr << "[" << __func__ << "] an error occurs in Vulkan. error code: " << x << std::endl; std::exit(EXIT_FAILURE); }
 #define SDL_CHECK(x) if((x) != SDL_TRUE) { std::cerr << "[" << __func__ << "] an error occurs in SDL" << std::endl; std::exit(EXIT_FAILURE); }
 #else
 #define VK_CHECK(x) x
 #define SDL_CHECK(x) x
 #endif
 
-struct VertexData {
-	glm::vec3 position;
-	glm::vec3 normal;
-	glm::vec2 texCoord;
-	glm::vec4 color;
-};
-
-struct PushConstants {
-	glm::mat4 model;
-	glm::mat4 view;
-	glm::mat4 projection;
-};
-
-struct UniformBufferObject {
+struct TransformBufferObject {
 	glm::mat4 model;
 	glm::mat4 view;
 	glm::mat4 projection;
 	glm::mat4 normalMatrix;
+};
+
+struct MaterialBufferObject {
+	glm::vec4 diffuse;
+	glm::vec3 specular;
+	float specCoef;
+	glm::vec3 ambient;
+	std::uint32_t isTextureUsed;
+	std::uint32_t isSphereUsed;
+	std::uint32_t isToonUsed;
 };
 
 class GraphicsEngine {
@@ -60,6 +52,36 @@ class GraphicsEngine {
 
 	static constexpr VkFormat desiredFormat = VK_FORMAT_B8G8R8A8_UNORM;
 	static constexpr VkFormat desiredDepthFormat = VK_FORMAT_D32_SFLOAT;
+
+	template<typename T>
+	struct VertexBuffer {
+		using type = T;
+
+		VkBuffer buffer;
+		VkDeviceMemory memory;
+	};
+
+	struct IndexBuffer {
+		VkBuffer buffer;
+		VkDeviceMemory memory;
+		std::size_t size;
+		VkIndexType indexType;
+	};
+
+	template<typename T>
+	struct UniformBuffer {
+		using type = T;
+
+		VkBuffer buffer;
+		VkDeviceMemory memory;
+		std::uint8_t* pointer;
+	};
+
+	struct Texture {
+		VkImage image;
+		VkDeviceMemory memory;
+		VkImageView view;
+	};
 
 	VkExtent2D imageSize_;
 
@@ -91,20 +113,19 @@ class GraphicsEngine {
 	std::vector<VkFramebuffer> defaultFramebuffers_;
 	std::uint32_t currentFrameIndex_;
 
-	VkBuffer vertexBuffer_;
-	VkDeviceMemory vertexBufferMemory_;
+	VertexBuffer<PMXVertexAttribute> vertexBuffer_;
 
-	VkBuffer indexBuffer_;
-	VkDeviceMemory indexBufferMemory_;
+	IndexBuffer indexBuffer_;
+
+	std::vector<Texture> textures_{};
 
 	VkImage textureImage_;
 	VkDeviceMemory textureImageMemory_;
 	VkImageView textureImageView_;
 	VkSampler textureSampler_;
 
-	std::vector<VkBuffer> uniformBuffers_;
-	std::vector<VkDeviceMemory> uniformBuffersMemory_;
-	std::vector<std::uint8_t*> uniformBuffersMapped_;
+	UniformBuffer<TransformBufferObject> transformBuffer_;
+	std::vector<UniformBuffer<MaterialBufferObject>> materialBuffers_;
 
 	VkShaderModule vertexShaderModule_;
 	VkShaderModule fragmentShaderModule_;
@@ -115,6 +136,9 @@ class GraphicsEngine {
 
 	VkPipelineLayout defaultPipelineLayout_;
 	VkPipeline defaultGraphicsPipeline_;
+
+	std::uint32_t numIndices_;
+	std::vector<PMXMaterial> materials_;
 
 	// resorce creation
 
@@ -138,27 +162,31 @@ class GraphicsEngine {
 	void createDefaultFramebuffers();
 
 	void createBuffer(std::size_t, VkBufferUsageFlags, VkBuffer&);
-	void createImage(VkFormat, const VkExtent3D&, VkImageUsageFlags, VkSampleCountFlagBits, VkImage&);
-	void createImageView(const VkImage&, VkFormat, const VkImageSubresourceRange&, VkImageView&);
+	void createImage2D(VkFormat, const VkExtent3D&, VkImageUsageFlags, VkSampleCountFlagBits, VkImage&);
+	void createImageView2D(const VkImage&, VkFormat, const VkImageSubresourceRange&, VkImageView&);
 	template<typename T, std::enable_if_t<std::is_same_v<T, VkBuffer> || std::is_same_v<T, VkImage>, std::nullptr_t> = nullptr>
 	void allocateDeviceMemory(const T&, VkDeviceMemory&, VkMemoryPropertyFlags);
 
 	template<typename T>
-	void createVertexBuffer(const std::vector<T>&);
-	template<typename T, std::enable_if_t<std::is_same_v<T, std::uint16_t> || std::is_same_v<T, std::uint32_t>, std::nullptr_t> = nullptr>
-	void createIndexBuffer(const std::vector<T>&);
-	template<typename T>
-	void createUniformBuffer(std::size_t);
+	void createVertexBuffer(const std::vector<T>&, VertexBuffer<T>&);
 
-	void createTextureImage(const std::vector<std::uint8_t>&, VkFormat, VkExtent2D);
-	void createTextureImageView(VkFormat);
+	template<typename T, std::enable_if_t<std::is_same_v<T, std::uint16_t> || std::is_same_v<T, std::uint32_t>, std::nullptr_t> = nullptr>
+	void createIndexBuffer(const std::vector<T>&, IndexBuffer&);
+
+	template<typename T>
+	void createUniformBuffer(UniformBuffer<T>&);
+
+	template<typename T>
+	void createConstantUnifromBuffer(const T*, UniformBuffer<T>&);
+
+	void createTexture(const std::vector<std::uint8_t>&, VkFormat, const VkExtent3D&, Texture&);
 	void createTextureSampler();
 
 	void createShaderModule(const char*, const char*);
 
 	void createDefaultDescriptorSetLayout();
-	void createDefaultDescriptorPool(std::size_t);
-	void createDefaultDescriptorSets(std::size_t);
+	void createDefaultDescriptorPool(std::uint32_t);
+	void createDefaultDescriptorSets(const UniformBuffer<MaterialBufferObject>&, const Texture&, const Texture&, const Texture&, VkDescriptorSet&);
 
 	void createDefaultPipelineLayout();
 	void createDefaultGraphicsPipeline();
