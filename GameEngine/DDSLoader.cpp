@@ -45,4 +45,6 @@ bool DDSLoader::load(const std::filesystem::path& path, std::uint32_t& width, st
 	data.resize(mainImageSize);
 
 	ifs.read((char*)data.data(), mainImageSize);
+
+	return true;
 }
