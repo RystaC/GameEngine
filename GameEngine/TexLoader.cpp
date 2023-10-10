@@ -18,7 +18,7 @@ bool TexLoader::load(const std::filesystem::path& path, VkExtent3D& size, VkForm
 
 		std::vector<uint8_t> dataBuffer(fileSize);
 		ifs.read((char*)dataBuffer.data(), fileSize);
-		auto imageData = stbi_load_from_memory(dataBuffer.data(), dataBuffer.size(), &x, &y, &c, STBI_rgb_alpha);
+		auto imageData = stbi_load_from_memory(dataBuffer.data(), static_cast<int>(dataBuffer.size()), &x, &y, &c, STBI_rgb_alpha);
 		if (!imageData) {
 			std::cerr << "[TexLoader] failed to read image" << std::endl;
 			return false;

@@ -1,533 +1,629 @@
 #include "PMXLoader.h"
 
 void PMXLoader::readHeader() {
-	Byte magic[4]{};
-	ifs.read((char*)magic, sizeof(Byte) * 4);
+	// magic number
+	std::uint8_t magic[4]{};
+	read_Byte(magic[0]);
+	read_Byte(magic[1]);
+	read_Byte(magic[2]);
+	read_Byte(magic[3]);
 
+	// must be "PMX "
 	if (!(std::string_view((const char*)magic, 4) == "PMX ")) {
 		std::cerr << "Input file is not a PMX file" << std::endl;
 		std::exit(EXIT_FAILURE);
 	}
 
-	Float version{};
-	ifs.read((char*)&version, sizeof(Float));
-	//std::cout << "PMX version: " << version << std::endl;
+	glm::float32_t version{};
+	read_Float(version);
 
-	Byte infoSize{};
-	ifs.read((char*)&infoSize, sizeof(infoSize));
-	//std::cout << "information block size (must be 8): " << (int)infoSize << std::endl;
+	std::uint8_t dataSize{};
+	read_Byte(dataSize);
 
-	ifs.read((char*)info, sizeof(Byte) * 8);
-	Encode encode = getIndexSize(IndexSize::ENCODE) == 0 ? Encode::UTF16LE : Encode::UTF8;
-	//if (encode == Encode::UTF16LE) std::cout << "text encode is UTF16LE" << std::endl;
-	//else std::cout << "text encode is UTF8" << std::endl;
-	//std::cout << "# of additional UVs: " << (int)getIndexSize(IndexSize::ADDITIONAL_UV) << std::endl;
-	//std::cout << "vertex index size: " << (int)getIndexSize(IndexSize::VERTEX) << std::endl;
-	//std::cout << "texture index size: " << (int)getIndexSize(IndexSize::TEXTURE) << std::endl;
-	//std::cout << "material index size: " << (int)getIndexSize(IndexSize::MATERIAL) << std::endl;
-	//std::cout << "bone index size: " << (int)getIndexSize(IndexSize::BONE) << std::endl;
-	//std::cout << "morph index size: " << (int)getIndexSize(IndexSize::MORPH) << std::endl;
-	//std::cout << "rigid index size: " << (int)getIndexSize(IndexSize::RIGID) << std::endl;
-
-	if (encode != Encode::UTF16LE) {
-		std::cerr << "[PMXLoader] text format must be UTF16 now" << std::endl;
+	// must be 8 byte
+	if (dataSize != 8) {
+		std::cerr << "size of data in header must be 8 but " << dataSize << std::endl;
 		std::exit(EXIT_FAILURE);
 	}
 
-	if (getIndexSize(IndexSize::VERTEX) != 2) {
-		std::cerr << "[PMXLoader] vertex index size must be 2 byte" << std::endl;
-		std::exit(EXIT_FAILURE);
-	}
+	// read index sizes (+ encode & additional UVs)
+	for (auto i = 0; i < 8; ++i) read_Byte(indexSize_[i]);
 }
 
 void PMXLoader::readModelInfo() {
-	ModelInfo modelInfo{};
-	readTextBuf(modelInfo.name);
-	readTextBuf(modelInfo.name_en);
-	readTextBuf(modelInfo.comment);
-	readTextBuf(modelInfo.comment_en);
-
-	//std::cout << "model name: " << UTF16_TEXT(modelInfo.name) << std::endl;
-	//std::cout << "model name (en):" << UTF16_TEXT(modelInfo.name_en) << std::endl;
-	//std::cout << "comment: " << UTF16_TEXT(modelInfo.comment) << std::endl;
-	//std::cout << "comment (en): " << UTF16_TEXT(modelInfo.comment_en) << std::endl;
+	// model name
+	skip_TextBuf();
+	// model name (en)
+	skip_TextBuf();
+	// comment
+	skip_TextBuf();
+	// comment (en)
+	skip_TextBuf();
 }
 
-void PMXLoader::readVertexData(std::vector<PMXVertexAttribute>& vertexData) {
-	Int numVertices{};
-	ifs.read((char*)&numVertices, sizeof(Int));
-	//std::cout << "# of vertices: " << numVertices << std::endl;
-	vertexData.resize(numVertices);
+void PMXLoader::readVertexData(std::vector<PMX_Vertex>& vertices) {
+	std::int32_t verticesCount{};
+	read_Int(verticesCount);
+	vertices.resize(verticesCount);
 
-	struct {
-		int bdef1, bdef2, bdef4, sdef;
-	} weightCount{};
+	for (auto i = 0; i < verticesCount; ++i) {
+		// position
+		read_Float3(vertices[i].position);
+		// normal
+		read_Float3(vertices[i].normal);
+		// uv
+		read_Float2(vertices[i].uv);
 
-	struct DefaultAttribute {
-		Float3 position;
-		Float3 normal;
-		Float2 uv;
-	};
+		// additional UVs (0 ~ 4)
+		for (auto j = 0; j < getIndexSize(Index::ADDITIONAL_UV); ++j) read_Float4(vertices[i].addionalUV[j]);
 
-	auto attributeSize = sizeof(DefaultAttribute) + sizeof(glm::vec4) * getIndexSize(IndexSize::ADDITIONAL_UV);
+		// bone index & weight
+		std::uint8_t weightType{};
+		read_Byte(weightType);
 
-	for (auto i = 0; i < numVertices; ++i) {
-		
-		ifs.read((char*)&vertexData[i], attributeSize);
-
-		Byte type{};
-		ifs.read((char*)&type, sizeof(Byte));
-
-		BoneWeight boneWeight{};
-
-		switch ((WeightType)type) {
-		case WeightType::BDEF1:
-			boneWeight.type = (WeightType)type;
-			readBDEF1(boneWeight.weight.bdef1);
-			weightCount.bdef1 += 1;
+		switch (weightType) {
+		// BDEF1
+		case 0:
+			read_Index(getIndexSize(Index::BONE), vertices[i].boneIndices[0]);
 			break;
-		case WeightType::BDEF2:
-			boneWeight.type = (WeightType)type;
-			readBDEF2(boneWeight.weight.bdef2);
-			weightCount.bdef2 += 1;
+		// BDEF2
+		case 1:
+			read_Index(getIndexSize(Index::BONE), vertices[i].boneIndices[0]);
+			read_Index(getIndexSize(Index::BONE), vertices[i].boneIndices[1]);
+			read_Float(vertices[i].boneWeights[0]);
 			break;
-		case WeightType::BDEF4:
-			boneWeight.type = (WeightType)type;
-			readBDEF4(boneWeight.weight.bdef4);
-			weightCount.bdef4 += 1;
+		// BDEF4
+		case 2:
+			read_Index(getIndexSize(Index::BONE), vertices[i].boneIndices[0]);
+			read_Index(getIndexSize(Index::BONE), vertices[i].boneIndices[1]);
+			read_Index(getIndexSize(Index::BONE), vertices[i].boneIndices[2]);
+			read_Index(getIndexSize(Index::BONE), vertices[i].boneIndices[3]);
+			read_Float(vertices[i].boneWeights[0]);
+			read_Float(vertices[i].boneWeights[1]);
+			read_Float(vertices[i].boneWeights[2]);
+			read_Float(vertices[i].boneWeights[3]);
 			break;
-		case WeightType::SDEF:
-			boneWeight.type = (WeightType)type;
-			readSDEF(boneWeight.weight.sdef);
-			weightCount.sdef += 1;
+		// SDEF (currently treated as BDEF2)
+		case 3:
+			read_Index(getIndexSize(Index::BONE), vertices[i].boneIndices[0]);
+			read_Index(getIndexSize(Index::BONE), vertices[i].boneIndices[1]);
+			read_Float(vertices[i].boneWeights[0]);
+			// SDEF-C
+			skip_Float3();
+			// SDEF-R0
+			skip_Float3();
+			// SDEF-R1
+			skip_Float3();
 			break;
 		default:
+			std::cerr << "illegal type of bone weights" << std::endl;
+			std::exit(EXIT_FAILURE);
 			break;
 		}
 
-		Float edgeMag{};
-		ifs.read((char*)&edgeMag, sizeof(Float));
-	}
-
-	//std::cout << "vertex data statistics:" << std::endl;
-	//std::cout << "\t# of BDEF1: " << weightCount.bdef1 << std::endl;
-	//std::cout << "\t# of BDEF2: " << weightCount.bdef2 << std::endl;
-	//std::cout << "\t# of BDEF4: " << weightCount.bdef4 << std::endl;
-	//std::cout << "\t# of SDEF: " << weightCount.sdef << std::endl;
-}
-
-void PMXLoader::readFaceData(std::vector<std::uint16_t>& indexData) {
-	Int numIndices{};
-	ifs.read((char*)&numIndices, sizeof(Int));
-	//std::cout << "# of indices: " << numIndices << std::endl;
-	indexData.resize(numIndices);
-
-	for (auto i = 0; i < numIndices; ++i) {
-		ifs.read((char*)&indexData[i], getIndexSize(IndexSize::VERTEX));
+		// edge multiplification
+		read_Float(vertices[i].edgeMult);
 	}
 }
 
-void PMXLoader::readTextureData(std::vector<std::filesystem::path>& texturePathTable) {
-	Int numTextures{};
-	ifs.read((char*)&numTextures, sizeof(Int));
-	//std::cout << "# of textures: " << numTextures << std::endl;
+void PMXLoader::readFaceData(PMX_Indices& indices) {
+	std::int32_t indicesCount{};
+	read_Int(indicesCount);
 
-	for (auto i = 0; i < numTextures; ++i) {
-		TextBuf texturePathByte{};
-		readTextBuf(texturePathByte);
-		texturePathTable.emplace_back(parentPath / std::filesystem::path(std::u16string(texturePathByte.begin(), texturePathByte.end())));
-		//std::cout << "\ttexture #" << i << ": " << UTF16_TEXT(texturePath) << std::endl;
+	if (getIndexSize(Index::VERTEX) == 1 || getIndexSize(Index::VERTEX) == 2) {
+		indices = std::vector<uint16_t>(indicesCount);
+		for (auto i = 0; i < indicesCount; ++i) {
+			std::int32_t index{};
+			read_Index(getIndexSize(Index::VERTEX), index);
+			std::get<std::vector<std::uint16_t>>(indices)[i] = index;
+		}
+	}
+	else if (getIndexSize(Index::VERTEX) == 4) {
+		indices = std::vector<uint32_t>(indicesCount);
+		for (auto i = 0; i < indicesCount; ++i) {
+			std::int32_t index{};
+			read_Index(getIndexSize(Index::VERTEX), index);
+			std::get<std::vector<std::uint32_t>>(indices)[i] = index;
+		}
+	}
+	else {
+		std::cerr << "illegal size of indices" << std::endl;
+		std::exit(EXIT_FAILURE);
 	}
 }
 
-void PMXLoader::readMaterialData(std::vector<PMXMaterial>& materials) {
-	Int numMaterials{};
-	ifs.read((char*)&numMaterials, sizeof(Int));
-	//std::cout << "# of materials: " << numMaterials << std::endl;
-	materials.resize(numMaterials);
+void PMXLoader::readTextureData(std::vector<PMX_TexturePath>& texturePaths) {
+	std::int32_t pathsCount{};
+	read_Int(pathsCount);
+	texturePaths.resize(pathsCount);
 
-	std::size_t accumFaces = 0;
-
-	for (auto i = 0; i < numMaterials; ++i) {
-		TextBuf name{}, name_en{};
-		readTextBuf(name);
-		readTextBuf(name_en);
-		//std::cout << "material #" << i << ":" << std::endl;
-		//std::cout << "\tname: " << std::filesystem::path(std::u16string(name.begin(), name.end())) << std::endl;
-		//std::cout << "\tname (en): " << UTF16_TEXT(name_en) << std::endl;
-
-		MaterialColor materialColor{};
-		ifs.read((char*)&materials[i].color, sizeof(PMXMaterialColor));
-
-		BitFlag flag{};
-		ifs.read((char*)&flag, sizeof(BitFlag));
-
-		Float4 edgeColor{};
-		Float edgeSize{};
-		ifs.read((char*)&edgeColor, sizeof(Float4));
-		ifs.read((char*)&edgeSize, sizeof(Float));
-
-		ifs.read((char*)&materials[i].textureIndex, getIndexSize(IndexSize::TEXTURE));
-		ifs.read((char*)&materials[i].sphereIndex, getIndexSize(IndexSize::TEXTURE));
-		//std::cout << "\ttexture index: " << texIndex << std::endl;
-		//std::cout << "\tsphere index: " << sphereIndex << std::endl;
-		
-		ifs.read((char*)&materials[i].sphereModeFlag, sizeof(Byte));
-
-		Byte toonFlag{};
-		ifs.read((char*)&toonFlag, sizeof(Byte));
-		materials[i].useSharedToon = toonFlag == 1 ? true : false;
-
-
-		if (toonFlag == 0) {
-			ifs.read((char*)&materials[i].toonIndex, getIndexSize(IndexSize::TEXTURE));
-			//std::cout << "\ttoon texture index (unique): " << toonIndex << std::endl;
+	// UTF16
+	if (getIndexSize(Index::ENCODE) == 0) {
+		for (auto i = 0; i < pathsCount; ++i) {
+			std::vector<std::uint16_t> pathBytes{};
+			read_TextBuf(pathBytes);
+			texturePaths[i] = parentPath_ / std::filesystem::path(std::u16string(pathBytes.begin(), pathBytes.end()));
 		}
-		else {
-			ifs.read((char*)&materials[i].toonIndex, sizeof(Byte));
-			//std::cout << "\ttoon texture index (shared): " << (int)sharedIndex << std::endl;
+	}
+	// UTF8
+	else if (getIndexSize(Index::ENCODE) == 1) {
+		for (auto i = 0; i < pathsCount; ++i) {
+			std::vector<std::uint8_t> pathBytes{};
+			read_TextBuf(pathBytes);
+			texturePaths[i] = parentPath_ / std::filesystem::path(std::u8string(pathBytes.begin(), pathBytes.end()));
 		}
-
-		TextBuf memo{};
-		readTextBuf(memo);
-		//std::cout << "\tmemo: " << UTF16_TEXT(memo) << std::endl;
-
-		Int numFaces{};
-		ifs.read((char*)&numFaces, sizeof(Int));
-		//std::cout << "\t# of faces: " << numFaces << std::endl;
-		materials[i].indexCount = numFaces;
-		materials[i].indexOffset = accumFaces;
-		accumFaces += numFaces;
+	}
+	else {
+		std::cerr << "illegal encode for texture paths" << std::endl;
+		std::exit(EXIT_FAILURE);
 	}
 }
 
-void PMXLoader::readBoneData() {
-	Int numBones{};
-	ifs.read((char*)&numBones, sizeof(Int));
-	//std::cout << "# of bones: " << numBones << std::endl;
+void PMXLoader::readMaterialData(std::vector<PMX_Material>& materials) {
+	std::int32_t materialsCount{};
+	read_Int(materialsCount);
+	materials.resize(materialsCount);
 
-	for (auto i = 0; i < numBones; ++i) {
-		TextBuf name{}, name_en{};
-		readTextBuf(name);
-		readTextBuf(name_en);
-		//std::cout << "bone #" << i << ":" << std::endl;
-		//std::cout << "\tname: " << UTF16_TEXT(name) << std::endl;
-		//std::cout << "\tname (en): " << UTF16_TEXT(name_en) << std::endl;
+	// accumulate face index for offset
+	std::int32_t indexOffset = 0;
 
-		Float3 position{};
-		Int parentIndex{};
-		Int hierarchy{};
-		ifs.read((char*)&position, sizeof(Float3));
-		ifs.read((char*)&parentIndex, getIndexSize(IndexSize::BONE));
-		ifs.read((char*)&hierarchy, sizeof(Int));
+	for (auto i = 0; i < materialsCount; ++i) {
+		// name
+		skip_TextBuf();
+		// name (en)
+		skip_TextBuf();
 
-		// BitFlag * 2
-		uShort boneFlag{};
-		ifs.read((char*)&boneFlag, sizeof(uShort));
+		// diffuse
+		read_Float4(materials[i].diffuse);
+		// specular
+		read_Float3(materials[i].specular);
+		// specular coefficient
+		read_Float(materials[i].specCoef);
+		// ambient
+		read_Float3(materials[i].ambient);
 
-		constexpr uShort connectMask = 0x0001;
-		constexpr uShort isIk = 0x0020;
+		// flags
+		read_Byte(materials[i].flags);
 
-		constexpr uShort globalGive = 0x0100 | 0x0200;
-		constexpr uShort axisFix = 0x0400;
-		constexpr uShort localAxis = 0x0800;
-		constexpr uShort extTrans = 0x2000;
+		// edge color
+		read_Float4(materials[i].edgeColor);
+		// edge size;
+		read_Float(materials[i].edgeSize);
 
-		if (!(boneFlag & connectMask)) {
-			Float3 offset{};
-			ifs.read((char*)&offset, sizeof(Float3));
+		// texture index
+		read_Index(getIndexSize(Index::TEXTURE), materials[i].textureIndex);
+		// sphere texture index
+		read_Index(getIndexSize(Index::TEXTURE), materials[i].sphereIndex);
+		// sphere mode
+		read_Byte(materials[i].sphereMode);
+
+		// is shared toon
+		read_Byte(materials[i].isSharedToon);
+
+		// shared toon index (byte)
+		if (materials[i].isSharedToon) read_Index(1, materials[i].toonIndex);
+		// unique toon index (texture index size)
+		else read_Index(getIndexSize(Index::TEXTURE), materials[i].toonIndex);
+
+		// memo
+		skip_TextBuf();
+
+		// face count
+		std::int32_t count{};
+		read_Int(count);
+		materials[i].indexOffset = indexOffset;
+		materials[i].indexCount = count;
+		indexOffset += count;
+	}
+}
+
+void PMXLoader::readBoneData(std::vector<PMX_Bone>& bones) {
+	std::int32_t bonesCount{};
+	read_Int(bonesCount);
+	bones.resize(bonesCount);
+
+	for (auto i = 0; i < bonesCount; ++i) {
+		// name
+		skip_TextBuf();
+		// name (en)
+		skip_TextBuf();
+
+		// position
+		read_Float3(bones[i].position);
+		// parent index
+		read_Index(getIndexSize(Index::BONE), bones[i].parentIndex);
+		// hierarchy
+		read_Int(bones[i].hierarchy);
+
+		// flags
+		read_uShort(bones[i].flags);
+
+		// connection
+		// bone
+		if (bones[i].flags & 0x0001) skip_Index(getIndexSize(Index::BONE));
+		// offset
+		else skip_Float3();
+
+		// give
+		if ((bones[i].flags & 0x0100) || (bones[i].flags & 0x0200)) {
+			// bone index
+			skip_Index(getIndexSize(Index::BONE));
+			// rate
+			skip_Float();
 		}
-		else {
-			Int boneIndex{};
-			ifs.read((char*)&boneIndex, getIndexSize(IndexSize::BONE));
+
+		// fixed axis
+		if (bones[i].flags & 0x0400) skip_Float3();
+
+		// local axis
+		if (bones[i].flags & 0x0800) {
+			// X axis
+			skip_Float3();
+			// Z axis
+			skip_Float3();
 		}
 
-		if (boneFlag & globalGive) {
-			Int boneIndex{};
-			Float rate{};
-			ifs.read((char*)&boneIndex, getIndexSize(IndexSize::BONE));
-			ifs.read((char*)&rate, sizeof(Float));
-		}
+		// external parent
+		if (bones[i].flags & 0x2000) skip_Int();
 
-		if (boneFlag & axisFix) {
-			Float3 axisVector{};
-			ifs.read((char*)&axisVector, sizeof(Float3));
-		}
+		// IK
+		if (bones[i].flags & 0x0020) {
+			// target index
+			read_Index(getIndexSize(Index::BONE), bones[i].ik.targetIndex);
+			// loop count
+			read_Int(bones[i].ik.loopCount);
+			// limit
+			read_Float(bones[i].ik.limit_rad);
 
-		if (boneFlag & localAxis) {
-			Float3 xAxis{}, zAxis{};
-			ifs.read((char*)&xAxis, sizeof(Float3));
-			ifs.read((char*)&zAxis, sizeof(Float3));
-		}
+			// links count
+			std::int32_t linksCount{};
+			read_Int(linksCount);
+			bones[i].ik.links.resize(linksCount);
 
-		if (boneFlag & extTrans) {
-			Int key{};
-			ifs.read((char*)&key, sizeof(Int));
-		}
+			for (auto j = 0; j < linksCount; ++j) {
+				// link bone index
+				read_Index(getIndexSize(Index::BONE), bones[i].ik.links[j].index);
+				// is limited
+				read_Byte(bones[i].ik.links[j].isLimited);
 
-		if (boneFlag & isIk) {
-			Int targetIndex{};
-			ifs.read((char*)&targetIndex, getIndexSize(IndexSize::BONE));
-
-			Int numLoops{};
-			Float limitRadian{};
-			ifs.read((char*)&numLoops, sizeof(Int));
-			ifs.read((char*)&limitRadian, sizeof(Float));
-
-			Int numLinks{};
-			ifs.read((char*)&numLinks, sizeof(Int));
-
-			for (auto l = 0; l < numLinks; ++l) {
-				Int linkIndex{};
-				ifs.read((char*)&linkIndex, getIndexSize(IndexSize::BONE));
-
-				Byte isLimited{};
-				ifs.read((char*)&isLimited, sizeof(Byte));
-
-				if (isLimited) {
-					Float3 lower{}, upper{};
-					ifs.read((char*)&lower, sizeof(Float3));
-					ifs.read((char*)&upper, sizeof(Float3));
+				if (bones[i].ik.links[j].isLimited) {
+					// lower bound
+					read_Float3(bones[i].ik.links[j].lowerBound_rad);
+					// upper bound
+					read_Float3(bones[i].ik.links[j].upperBound_rad);
 				}
 			}
 		}
 	}
 }
 
-void PMXLoader::readMorphData() {
-	Int numMorphs{};
-	ifs.read((char*)&numMorphs, sizeof(Int));
-	//std::cout << "# of morphs: " << numMorphs << std::endl;
+void PMXLoader::readMorphData(PMX_Morphs& morphs) {
+	std::int32_t morphsCount{};
+	read_Int(morphsCount);
+	
+	for (auto i = 0; i < morphsCount; ++i) {
+		// name
+		skip_TextBuf();
+		// name (en)
+		skip_TextBuf();
 
-	for (auto i = 0; i < numMorphs; ++i) {
-		//std::cout << "morph #" << i << ":" << std::endl;
+		// pane
+		skip_Byte();
 
-		TextBuf name{}, name_en{};
-		readTextBuf(name);
-		readTextBuf(name_en);
+		// type
+		std::uint8_t morphType{};
+		read_Byte(morphType);
 
-		//std::cout << "\t name: " << UTF16_TEXT(name) << std::endl;
-		//std::cout << "\t name (en): " << UTF16_TEXT(name_en) << std::endl;
+		// count
+		std::int32_t offsetsCount{};
+		read_Int(offsetsCount);
 
-		Byte ctrlPane{}, type{};
-		ifs.read((char*)&ctrlPane, sizeof(Byte));
-		ifs.read((char*)&type, sizeof(Byte));
+		switch (morphType) {
+		// group
+		case 0:
+			for (auto j = 0; j < offsetsCount; ++j) {
+				// morph index
+				std::int32_t index{};
+				read_Index(getIndexSize(Index::MORPH), index);
+				// rate
+				glm::float32_t rate{};
+				read_Float(rate);
 
-		Int numOffsets{};
-		ifs.read((char*)&numOffsets, sizeof(Int));
-
-		for (auto o = 0; o < numOffsets; ++o) {
-			Byte calcType{};
-
-			Morph morph{};
-
-			switch ((MorphType)type) {
-			case MorphType::GROUP:
-				morph.type = (MorphType)type;
-				ifs.read((char*)&morph.index, getIndexSize(IndexSize::MORPH));
-				ifs.read((char*)&morph.data.group.rate, sizeof(Float));
-				break;
-			case MorphType::VERTEX:
-				morph.type = (MorphType)type;
-				ifs.read((char*)&morph.index, getIndexSize(IndexSize::VERTEX));
-				ifs.read((char*)&morph.data.vertex.offset, sizeof(Float3));
-				break;
-			case MorphType::BONE:
-				morph.type = (MorphType)type;
-				ifs.read((char*)&morph.index, getIndexSize(IndexSize::BONE));
-				ifs.read((char*)&morph.data.bone.move, sizeof(Float3));
-				ifs.read((char*)&morph.data.bone.rotate_quat, sizeof(Float4));
-				break;
-			case MorphType::UV:
-				morph.type = (MorphType)type;
-				ifs.read((char*)&morph.index, getIndexSize(IndexSize::VERTEX));
-				ifs.read((char*)&morph.data.uv.offset, sizeof(Float4));
-				break;
-			case MorphType::A_UV1:
-				morph.type = (MorphType)type;
-				ifs.read((char*)&morph.index, getIndexSize(IndexSize::VERTEX));
-				ifs.read((char*)&morph.data.a_uv1.offset, sizeof(Float4));
-				break;
-			case MorphType::A_UV2:
-				morph.type = (MorphType)type;
-				ifs.read((char*)&morph.index, getIndexSize(IndexSize::VERTEX));
-				ifs.read((char*)&morph.data.a_uv2.offset, sizeof(Float4));
-				break;
-			case MorphType::A_UV3:
-				morph.type = (MorphType)type;
-				ifs.read((char*)&morph.index, getIndexSize(IndexSize::VERTEX));
-				ifs.read((char*)&morph.data.a_uv3.offset, sizeof(Float4));
-				break;
-			case MorphType::A_UV4:
-				morph.type = (MorphType)type;
-				ifs.read((char*)&morph.index, getIndexSize(IndexSize::VERTEX));
-				ifs.read((char*)&morph.data.a_uv4.offset, sizeof(Float4));
-				break;
-			case MorphType::MATERIAL:
-				ifs.read((char*)&morph.index,  getIndexSize(IndexSize::MATERIAL));
-				ifs.read((char*)&calcType, sizeof(Byte));
-				if (calcType == 0) {
-					morph.type = MorphType::MATERIAL_MUL;
-					ifs.read((char*)&morph.data.material_mul, sizeof(MaterialMorph));
-				}
-				else {
-					morph.type = MorphType::MATERIAL_ADD;
-					ifs.read((char*)&morph.data.material_add, sizeof(MaterialMorph));
-				}
-				break;
-			default:
-				break;
+				morphs.groupMorphs.emplace_back(PMX_Morph_Group{ index, rate });
 			}
+			break;
+		// vertex
+		case 1:
+			for (auto j = 0; j < offsetsCount; ++j) {
+				// index
+				std::int32_t index{};
+				read_Index(getIndexSize(Index::VERTEX), index);
+				// offset
+				glm::vec3 offset{};
+				read_Float3(offset);
+
+				morphs.vertexMorphs.emplace_back(PMX_Morph_Vertex{ index, offset });
+			}
+			break;
+		// bone
+		case 2:
+			for (auto j = 0; j < offsetsCount; ++j) {
+				// index
+				std::int32_t index{};
+				read_Index(getIndexSize(Index::BONE), index);
+				// translate offset
+				glm::vec3 transOffset{};
+				read_Float3(transOffset);
+				// rotate offset
+				glm::vec4 rotOffset_quat{};
+				read_Float4(rotOffset_quat);
+
+				morphs.boneMorphs.emplace_back(PMX_Morph_Bone{ index, transOffset, rotOffset_quat });
+			}
+			break;
+		// UV
+		case 3:
+			for (auto j = 0; j < offsetsCount; ++j) {
+				// index
+				std::int32_t index{};
+				read_Index(getIndexSize(Index::VERTEX), index);
+				// offset
+				glm::vec4 offset{};
+				read_Float4(offset);
+
+				morphs.uvMorphs.emplace_back(PMX_Morph_UV{ index, offset });
+			}
+			break;
+		// additional UV 1
+		case 4:
+			for (auto j = 0; j < offsetsCount; ++j) {
+				// index
+				std::int32_t index{};
+				read_Index(getIndexSize(Index::VERTEX), index);
+				// offset
+				glm::vec4 offset{};
+				read_Float4(offset);
+
+				morphs.addUVMorphs1.emplace_back(PMX_Morph_UV{ index, offset });
+			}
+			break;
+		// additional UV 2
+		case 5:
+			for (auto j = 0; j < offsetsCount; ++j) {
+				// index
+				std::int32_t index{};
+				read_Index(getIndexSize(Index::VERTEX), index);
+				// offset
+				glm::vec4 offset{};
+				read_Float4(offset);
+
+				morphs.addUVMorphs2.emplace_back(PMX_Morph_UV{ index, offset });
+			}
+			break;
+		// additional UV 3
+		case 6:
+			for (auto j = 0; j < offsetsCount; ++j) {
+				// index
+				std::int32_t index{};
+				read_Index(getIndexSize(Index::VERTEX), index);
+				// offset
+				glm::vec4 offset{};
+				read_Float4(offset);
+
+				morphs.addUVMorphs3.emplace_back(PMX_Morph_UV{ index, offset });
+			}
+			break;
+		// additional UV 4
+		case 7:
+			for (auto j = 0; j < offsetsCount; ++j) {
+				// index
+				std::int32_t index{};
+				read_Index(getIndexSize(Index::VERTEX), index);
+				// offset
+				glm::vec4 offset{};
+				read_Float4(offset);
+
+				morphs.addUVMorphs4.emplace_back(PMX_Morph_UV{ index, offset });
+			}
+			break;
+		// material
+		case 8:
+			for (auto j = 0; j < offsetsCount; ++j) {
+				// index
+				std::int32_t index{};
+				read_Index(getIndexSize(Index::MATERIAL), index);
+				// calculation mode
+				std::uint8_t mode{};
+				read_Byte(mode);
+				// diffuse
+				glm::vec4 diffuse{};
+				read_Float4(diffuse);
+				// specular
+				glm::vec3 specular{};
+				read_Float3(specular);
+				// specular coefficient
+				glm::float32_t specCoef{};
+				read_Float(specCoef);
+				// ambient
+				glm::vec3 ambient{};
+				read_Float3(ambient);
+				// edge color
+				glm::vec4 edgeColor{};
+				read_Float4(edgeColor);
+				// edge size
+				glm::float32_t edgeSize{};
+				read_Float(edgeSize);
+				// texture coefficient
+				glm::vec4 textureCoef{};
+				read_Float4(textureCoef);
+				// sphere texture coefficient
+				glm::vec4 sphereCoef{};
+				read_Float4(sphereCoef);
+				// toon texture coefficient
+				glm::vec4 toonCoef{};
+				read_Float4(toonCoef);
+
+				// add material morph
+				if(mode) morphs.materialAddMorphs.emplace_back(PMX_Morph_Material{ index, diffuse, specular, specCoef, ambient, edgeColor, edgeSize, textureCoef, sphereCoef, toonCoef });
+				// multiply material morph
+				else morphs.materialMulMorphs.emplace_back(PMX_Morph_Material{ index, diffuse, specular, specCoef, ambient, edgeColor, edgeSize, textureCoef, sphereCoef, toonCoef });
+			}
+			break;
+
+		default:
+			std::cerr << "invalid morph type" << std::endl;
+			std::exit(EXIT_FAILURE);
+			break;
 		}
 	}
 }
 
 void PMXLoader::readFrameData() {
-	Int numFrames{};
-	ifs.read((char*)&numFrames, sizeof(Int));
-	//std::cout << "# of frames: " << numFrames << std::endl;
+	std::int32_t framesCount{};
+	read_Int(framesCount);
 
-	for (auto i = 0; i < numFrames; ++i) {
-		//std::cout << "frame #" << i << ":" << std::endl;
+	for (auto i = 0; i < framesCount; ++i) {
+		// name
+		skip_TextBuf();
+		// name (en)
+		skip_TextBuf();
 
-		TextBuf name{}, name_en{};
-		readTextBuf(name);
-		readTextBuf(name_en);
-		//std::cout << "\tname: " << UTF16_TEXT(name) << std::endl;
-		//std::cout << "\tname (en): " << UTF16_TEXT(name_en) << std::endl;
+		// flag
+		skip_Byte();
 
-		Byte frameFlag{};
-		ifs.read((char*)&frameFlag, sizeof(Byte));
+		// elements count
+		std::int32_t count{};
+		read_Int(count);
 
-		Int numElements{};
-		ifs.read((char*)&numElements, sizeof(Int));
+		for (auto j = 0; i < count; ++j) {
+			// target type
+			std::uint8_t type{};
+			read_Byte(type);
 
-		for (auto e = 0; e < numElements; ++e) {
-			Byte target{};
-			ifs.read((char*)&target, sizeof(Byte));
-
-			FrameElement frameElement{};
-
-			if (target == 0) {
-				frameElement.target = FrameTarget::BONE;
-				ifs.read((char*)&frameElement.index.bone, getIndexSize(IndexSize::BONE));
-			}
-			else {
-				frameElement.target = FrameTarget::MORPH;
-				ifs.read((char*)&frameElement.index.morph, getIndexSize(IndexSize::MORPH));
-			}
+			// morph
+			if (type) skip_Index(getIndexSize(Index::MORPH));
+			// bone
+			else skip_Index(getIndexSize(Index::BONE));
 		}
 	}
 }
 
-void PMXLoader::readRigidData() {
-	Int numRigids{};
-	ifs.read((char*)&numRigids, sizeof(Int));
-	//std::cout << "# of rigids: " << numRigids << std::endl;
+void PMXLoader::readRigidData(std::vector<PMX_Rigid>& rigids) {
+	std::int32_t rigidsCount{};
+	read_Int(rigidsCount);
+	rigids.resize(rigidsCount);
 
-	for (auto i = 0; i < numRigids; ++i) {
-		//std::cout << "rigid #" << i << std::endl;
+	for (auto i = 0; i < rigidsCount; ++i) {
+		// name
+		skip_TextBuf();
+		// name (en)
+		skip_TextBuf();
 
-		TextBuf name{}, name_en{};
-		readTextBuf(name);
-		readTextBuf(name_en);
-		//std::cout << "\tname: " << UTF16_TEXT(name) << std::endl;
-		//std::cout << "\tname (en): " << UTF16_TEXT(name_en) << std::endl;
+		// bone index
+		read_Index(getIndexSize(Index::BONE), rigids[i].index);
 
-		Int boneIndex{};
-		ifs.read((char*)&boneIndex, getIndexSize(IndexSize::BONE));
+		// group
+		read_Byte(rigids[i].group);
+		// group flag
+		read_uShort(rigids[i].groupFlag);
 
-		Byte group{};
-		uShort groupFlag{};
-		ifs.read((char*)&group, sizeof(Byte));
-		ifs.read((char*)&groupFlag, sizeof(uShort));
+		// shape
+		read_Byte(rigids[i].shape);
+		// size
+		read_Float3(rigids[i].size);
 
-		Byte shape{};
-		Float3 size{};
-		ifs.read((char*)&shape, sizeof(Byte));
-		ifs.read((char*)&size, sizeof(Float3));
+		// position
+		read_Float3(rigids[i].position);
+		// rotation
+		read_Float3(rigids[i].rotate_rad);
 
-		struct RigidParams {
-			Float3 position;
-			Float3 rotateRadian;
-			Float mass;
-			Float transAtte;
-			Float rotateAtte;
-			Float repulsion;
-			Float friction;
-		} rigidParams{};
-		ifs.read((char*)&rigidParams, sizeof(RigidParams));
+		// mass
+		read_Float(rigids[i].mass);
+		// translate attenuation
+		read_Float(rigids[i].transAtte);
+		// rotate attenuation
+		read_Float(rigids[i].rotAtte);
+		// reflection
+		read_Float(rigids[i].reflection);
+		// friction
+		read_Float(rigids[i].friction);
 
-		Byte calcType{};
-		ifs.read((char*)&calcType, sizeof(Byte));
+		// calculation mode
+		read_Byte(rigids[i].calcMode);
 	}
 }
 
-void PMXLoader::readJointData() {
-	Int numJoints{};
-	ifs.read((char*)&numJoints, sizeof(Int));
-	//std::cout << "# of joints: " << numJoints << std::endl;
+void PMXLoader::readJointData(std::vector<PMX_Joint>& joints) {
+	std::int32_t jointsCount{};
+	read_Int(jointsCount);
+	joints.resize(jointsCount);
 
-	for (auto i = 0; i < numJoints; ++i) {
-		//std::cout << "joint #" << i << ":" << std::endl;
+	for (auto i = 0; i < jointsCount; ++i) {
+		// name
+		skip_TextBuf();
+		// name (en)
+		skip_TextBuf();
 
-		TextBuf name{}, name_en{};
-		readTextBuf(name);
-		readTextBuf(name_en);
-		//std::cout << "\tname: " << UTF16_TEXT(name) << std::endl;
-		//std::cout << "\tname (en): " << UTF16_TEXT(name_en) << std::endl;
+		// type (0 only)
+		skip_Byte();
 
-		Byte jointType{};
-		ifs.read((char*)&jointType, sizeof(Byte));
+		// rigid index A
+		read_Index(getIndexSize(Index::RIGID), joints[i].indexA);
+		// rigid index B
+		read_Index(getIndexSize(Index::RIGID), joints[i].indexB);
 
-		Int rigidIndexA{}, rigidIndexB{};
-		ifs.read((char*)&rigidIndexA, getIndexSize(IndexSize::RIGID));
-		ifs.read((char*)&rigidIndexB, getIndexSize(IndexSize::RIGID));
+		// position
+		read_Float3(joints[i].position);
+		// rotation
+		read_Float3(joints[i].rotate_rad);
 
-		struct JointParams {
-			Float3 position;
-			Float3 rotateRadian;
-			Float3 transLower, transUpper;
-			Float3 rotateLowerRadian, rotateUpperRadian;
-			Float3 springRateTrans;
-			Float3 springRateRotate;
-		} jointParams{};
+		// translate lower bound
+		read_Float3(joints[i].transLower);
+		// translate upper bound
+		read_Float3(joints[i].transUpper);
+		// rotate lower bound
+		read_Float3(joints[i].rotLower_rad);
+		// rotate upper bound
+		read_Float3(joints[i].rotUpper_rad);
 
-		ifs.read((char*)&jointParams, sizeof(JointParams));
+		// spring constant translate
+		read_Float3(joints[i].springTrans);
+		// spring constant rotate
+		read_Float3(joints[i].springRot);
 	}
 }
 
-void PMXLoader::load(const std::filesystem::path& path, std::vector<PMXVertexAttribute>& vertexData, std::vector<std::uint16_t>& indexData, std::vector<std::filesystem::path>& texturePathTable, std::vector<PMXMaterial>& materials) {
+void PMXLoader::load(const std::filesystem::path& path, PMXData& data) {
 
-	ifs = std::ifstream(path, std::ios::in | std::ios::binary);
-	if (ifs.fail()) {
+	ifs_ = std::ifstream(path, std::ios::in | std::ios::binary);
+	if (ifs_.fail()) {
 		std::cerr << "failed to open PMX file: " << path << std::endl;
 		std::exit(EXIT_FAILURE);
 	}
 
-	parentPath = path.parent_path();
+	parentPath_ = path.parent_path();
 
 	readHeader();
 
 	readModelInfo();
 
-	readVertexData(vertexData);
+	readVertexData(data.vertices);
 
-	readFaceData(indexData);
+	readFaceData(data.indices);
 
-	readTextureData(texturePathTable);
+	readTextureData(data.texturePaths);
 
-	readMaterialData(materials);
+	readMaterialData(data.materials);
 
-	readBoneData();
+	readBoneData(data.bones);
 
-	readMorphData();
+	readMorphData(data.morphs);
 
 	readFrameData();
 
-	readRigidData();
+	readRigidData(data.rigids);
 
-	readJointData();
+	readJointData(data.joints);
 
-	ifs.close();
+	ifs_.close();
 }

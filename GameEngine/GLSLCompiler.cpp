@@ -87,4 +87,6 @@ bool GLSLCompiler::compile(const std::filesystem::path& path) {
 		auto compiledTime = std::filesystem::file_time_type::clock::now();
 		timeStamp.write((const char*)&compiledTime, sizeof(std::filesystem::file_time_type));
 	}
+
+	return true;
 }

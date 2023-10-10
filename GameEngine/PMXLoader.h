@@ -7,6 +7,8 @@
 #include <iostream>
 #include <string>
 #include <string_view>
+#include <type_traits>
+#include <variant>
 #include <vector>
 
 #include "utf16to8.h"
@@ -14,37 +16,158 @@
 #define UTF8_TEXT(text_buf) (const char*)(text_buf).data()
 #define UTF16_TEXT(text_buf) (const char*)utf16to8((text_buf)).data()
 
-struct PMXVertexAttribute {
+struct PMX_Vertex {
 	glm::vec3 position;
 	glm::vec3 normal;
 	glm::vec2 uv;
-	glm::vec4 a_uv1, a_uv2, a_uv3, a_uv4;
+	// additional UV
+	glm::vec4 addionalUV[4];
+	// bones
+	glm::ivec4 boneIndices;
+	glm::vec4 boneWeights;
+	// glm::vec3 sdef_c, sdef_r0, sdef_r1;
+	glm::float32_t edgeMult;
 };
 
-struct PMXMaterialColor {
+using PMX_Indices = std::variant<std::vector<std::uint16_t>, std::vector<std::uint32_t>>;
+
+using PMX_TexturePath = std::filesystem::path;
+
+struct PMX_Material {
+	// color
 	glm::vec4 diffuse;
 	glm::vec3 specular;
-	float specCoef;
+	glm::float32_t specCoef;
 	glm::vec3 ambient;
-};
 
-struct PMXMaterial {
-	PMXMaterialColor color;
+	std::uint8_t flags;
 
-	std::size_t textureIndex, sphereIndex;
-	std::uint8_t sphereModeFlag;
+	// edge
+	glm::vec4 edgeColor;
+	glm::float32_t edgeSize;
 
-	bool useSharedToon;
-	std::size_t toonIndex;
+	// texture indices
+	std::int32_t textureIndex;
+	std::int32_t sphereIndex;
+	std::uint8_t sphereMode;
 
+	// toon texture
+	std::uint8_t isSharedToon;
+	std::int32_t toonIndex;
+
+	// face
 	std::uint32_t indexCount, indexOffset;
 };
 
+struct PMX_IK {
+	std::int32_t index;
+	std::uint8_t isLimited;
+	glm::vec3 lowerBound_rad;
+	glm::vec3 upperBound_rad;
+};
+
+struct PMX_Bone {
+	glm::vec3 position;
+	std::int32_t parentIndex;
+	std::int32_t hierarchy;
+
+	std::uint16_t flags;
+
+	// IK
+	struct {
+		std::int32_t targetIndex;
+		std::int32_t loopCount;
+		glm::float32_t limit_rad;
+		std::vector<PMX_IK> links;
+	} ik;
+};
+
+struct PMX_Morph_Group {
+	std::int32_t index;
+	glm::float32_t rate;
+};
+
+struct PMX_Morph_Vertex {
+	std::int32_t index;
+	glm::vec3 offset;
+};
+
+struct PMX_Morph_Bone {
+	std::int32_t index;
+	glm::vec3 translate;
+	glm::vec4 rotate_quat;
+};
+
+struct PMX_Morph_UV {
+	std::int32_t index;
+	glm::vec4 offset;
+};
+
+struct PMX_Morph_Material {
+	std::int32_t index;
+	glm::vec4 diffuse;
+	glm::vec3 specular;
+	glm::float32_t specCoef;
+	glm::vec3 ambient;
+	glm::vec4 edgeColor;
+	glm::float32_t edgeSize;
+	glm::vec4 textureCoef;
+	glm::vec4 sphereCoef;
+	glm::vec4 toonCoef;
+};
+
+struct PMX_Morphs {
+	std::vector<PMX_Morph_Group> groupMorphs;
+	std::vector<PMX_Morph_Vertex> vertexMorphs;
+	std::vector<PMX_Morph_Bone> boneMorphs;
+	std::vector<PMX_Morph_UV> uvMorphs;
+	std::vector<PMX_Morph_UV> addUVMorphs1, addUVMorphs2, addUVMorphs3, addUVMorphs4;
+	std::vector<PMX_Morph_Material> materialAddMorphs, materialMulMorphs;
+};
+
+struct PMX_Frame {
+};
+
+struct PMX_Rigid {
+	std::int32_t index;
+	std::uint8_t group;
+	std::uint16_t groupFlag;
+	std::uint8_t shape;
+	glm::vec3 size;
+	glm::vec3 position;
+	glm::vec3 rotate_rad;
+
+	glm::float32_t mass;
+	glm::float32_t transAtte;
+	glm::float32_t rotAtte;
+	glm::float32_t reflection;
+	glm::float32_t friction;
+	std::uint8_t calcMode;
+};
+
+struct PMX_Joint {
+	// 6-DOF (degree of freedom) only
+	// std::uint8_t type
+	std::int32_t indexA, indexB;
+
+	glm::vec3 position;
+	glm::vec3 rotate_rad;
+	glm::vec3 transLower, transUpper;
+	glm::vec3 rotLower_rad, rotUpper_rad;
+	glm::vec3 springTrans;
+	glm::vec3 springRot;
+};
+
 struct PMXData {
-	std::vector<PMXVertexAttribute> vertices;
-	std::vector<std::uint16_t> indices;
-	std::vector<std::filesystem::path> texturePathTable;
-	std::vector<PMXMaterial> materials;
+	std::vector<PMX_Vertex> vertices;
+	PMX_Indices indices;
+	std::vector<PMX_TexturePath> texturePaths;
+	std::vector<PMX_Material> materials;
+	std::vector<PMX_Bone> bones;
+	PMX_Morphs morphs;
+	// std::vector<PMX_Frame> frames;
+	std::vector<PMX_Rigid> rigids;
+	std::vector<PMX_Joint> joints;
 };
 
 class PMXLoader {
@@ -54,27 +177,8 @@ class PMXLoader {
 		UTF8,
 	};
 
-	// type aliases
-	using Byte = std::uint8_t;
-	using sByte = std::int8_t;
-	using uShort = std::uint16_t;
-	using Short = std::int16_t;
-	using uInt = std::uint32_t;
-	using Int = std::int32_t;
-	using Float = float;
-	using Float2 = glm::vec2;
-	using Float3 = glm::vec3;
-	using Float4 = glm::vec4;
-	// for UTF16
-	// TODO: for UTF8 
-	using TextBuf = std::vector<uShort>;
-	using BitFlag = Byte;
-
-	// generalize index type
-	using IndexType = Int;
-
 	// index for size information
-	enum class IndexSize {
+	enum class Index {
 		ENCODE = 0,
 		ADDITIONAL_UV = 1,
 		VERTEX = 2,
@@ -85,190 +189,81 @@ class PMXLoader {
 		RIGID = 7,
 	};
 
-	// model information
-	struct ModelInfo {
-		TextBuf name, name_en;
-		TextBuf comment, comment_en;
-	};
-
-	// vertex data
-
-	enum class WeightType {
-		BDEF1 = 0,
-		BDEF2 = 1,
-		BDEF4 = 2,
-		SDEF = 3,
-	};
-
-	struct BDEF1 {
-		IndexType bone1;
-	};
-
-	void readBDEF1(BDEF1& weight) {
-		ifs.read((char*)&weight.bone1, getIndexSize(IndexSize::BONE));
-	}
-
-	struct BDEF2{
-		IndexType bone1, bone2;
-		Float weight1;
-	};
-
-	void readBDEF2(BDEF2& weight) {
-		ifs.read((char*)&weight.bone1, getIndexSize(IndexSize::BONE));
-		ifs.read((char*)&weight.bone2, getIndexSize(IndexSize::BONE));
-		ifs.read((char*)&weight.weight1, sizeof(Float));
-	}
-
-	struct BDEF4{
-		IndexType bone1, bone2, bone3, bone4;
-		Float weight1, weight2, weight3, weight4;
-	};
-
-	void readBDEF4(BDEF4& weight) {
-		ifs.read((char*)&weight.bone1, getIndexSize(IndexSize::BONE));
-		ifs.read((char*)&weight.bone2, getIndexSize(IndexSize::BONE));
-		ifs.read((char*)&weight.bone3, getIndexSize(IndexSize::BONE));
-		ifs.read((char*)&weight.bone4, getIndexSize(IndexSize::BONE));
-		ifs.read((char*)&weight.weight1, sizeof(Float));
-		ifs.read((char*)&weight.weight2, sizeof(Float));
-		ifs.read((char*)&weight.weight3, sizeof(Float));
-		ifs.read((char*)&weight.weight4, sizeof(Float));
-	}
-
-	struct SDEF {
-		IndexType bone1, bone2;
-		Float weight1;
-		Float3 sdef_c, sdef_r0, sdef_r1;
-	};
-
-	void readSDEF(SDEF& weight) {
-		ifs.read((char*)&weight.bone1, getIndexSize(IndexSize::BONE));
-		ifs.read((char*)&weight.bone2, getIndexSize(IndexSize::BONE));
-		ifs.read((char*)&weight.weight1, sizeof(Float));
-		ifs.read((char*)&weight.sdef_c, sizeof(Float3));
-		ifs.read((char*)&weight.sdef_r0, sizeof(Float3));
-		ifs.read((char*)&weight.sdef_r1, sizeof(Float3));
-	}
-
-	struct BoneWeight {
-		WeightType type;
-		union {
-			BDEF1 bdef1;
-			BDEF2 bdef2;
-			BDEF4 bdef4;
-			SDEF sdef;
-		} weight;
-	};
-
-	// materials
-	struct MaterialColor {
-		Float4 diffuse;
-		Float3 specular;
-		Float specCoef;
-		Float3 ambient;
-	};
-
-	// morphs
-	enum class MorphType {
-		GROUP = 0,
-		VERTEX = 1,
-		BONE = 2,
-		UV = 3,
-		A_UV1 = 4,
-		A_UV2 = 5,
-		A_UV3 = 6,
-		A_UV4 = 7,
-		MATERIAL = 8,
-		MATERIAL_MUL,
-		MATERIAL_ADD,
-	};
-
-	struct GroupMorph {
-		Float rate;
-	};
-
-	struct VertexMorph {
-		Float3 offset;
-	};
-
-	struct UVMorph {
-		Float4 offset;
-	};
-
-	struct BoneMorph {
-		Float3 move;
-		Float4 rotate_quat;
-	};
-
-	struct MaterialMorph {
-		Float4 diffuse;
-		Float3 specular;
-		Float specCoef;
-		Float3 ambient;
-		Float4 edgeColor;
-		Float edgeSize;
-		Float4 textureCoef;
-		Float4 sphereCoef;
-		Float4 toonCoef;
-	};
-
-	struct Morph {
-		MorphType type;
-		IndexType index;
-		union {
-			GroupMorph group;
-			VertexMorph vertex;
-			UVMorph uv, a_uv1, a_uv2, a_uv3, a_uv4;
-			BoneMorph bone;
-			MaterialMorph material_mul, material_add;
-		} data;
-	};
-
-	// frames
-	enum class FrameTarget {
-		BONE = 0,
-		MORPH = 1,
-	};
-
-	struct FrameElement {
-		FrameTarget target;
-		union {
-			IndexType bone, morph;
-		} index;
-	};
 	// fields
 
-	std::ifstream ifs;
-	std::filesystem::path parentPath;
+	std::ifstream ifs_;
+	std::filesystem::path parentPath_;
 
-	Byte info[8];
+	std::uint8_t indexSize_[8];
 
 	// block read functions
 
 	void readHeader();
 	void readModelInfo();
-	void readVertexData(std::vector<PMXVertexAttribute>&);
-	void readFaceData(std::vector<std::uint16_t>&);
-	void readTextureData(std::vector<std::filesystem::path>&);
-	void readMaterialData(std::vector<PMXMaterial>&);
-	void readBoneData();
-	void readMorphData();
-	void readFrameData();
-	void readRigidData();
-	void readJointData();
+	void readVertexData(std::vector<PMX_Vertex>&);
+	void readFaceData(PMX_Indices&);
+	void readTextureData(std::vector<PMX_TexturePath>&);
+	void readMaterialData(std::vector<PMX_Material>&);
+	void readBoneData(std::vector<PMX_Bone>&);
+	void readMorphData(PMX_Morphs&);
+	void readFrameData(/*std::vector<PMX_Frame>&*/);
+	void readRigidData(std::vector<PMX_Rigid>&);
+	void readJointData(std::vector<PMX_Joint>&);
 
-	// utility
-	Byte getIndexSize(IndexSize target) {
-		return info[static_cast<std::uint32_t>(target)];
+	// utility (inline)
+
+	inline std::uint8_t getIndexSize(Index type) {
+		return indexSize_[static_cast<std::size_t>(type)];
 	}
 
-	void readTextBuf(TextBuf& textBuf) {
-		Int textSize{};
-		ifs.read((char*)&textSize, sizeof(Int));
-		textBuf.resize(textSize / sizeof(uShort));
-		ifs.read((char*)textBuf.data(), sizeof(Byte) * textSize);
+#define READ_FUNC(name, type) inline void read_##name(type& val) { ifs_.read((char*)&val, sizeof(type)); } \
+inline void skip_##name() { ifs_.seekg(sizeof(type), std::ios_base::cur); }
+
+	READ_FUNC(Byte, std::uint8_t);
+	READ_FUNC(sByte, std::int8_t);
+	READ_FUNC(uShort, std::uint16_t);
+	READ_FUNC(Short, std::int16_t);
+	READ_FUNC(uInt, std::uint32_t);
+	READ_FUNC(Int, std::int32_t);
+	READ_FUNC(Float, glm::float32_t);
+	READ_FUNC(Float2, glm::vec2);
+	READ_FUNC(Float3, glm::vec3);
+	READ_FUNC(Float4, glm::vec4);
+
+#undef READ_FUNC
+
+	inline void read_Index(std::uint8_t size, std::int32_t& index) {
+		std::int32_t val{};
+		ifs_.read((char*)&val, size);
+
+		// if size is 4 byte -> directly use value
+		if (size == 4) index = val;
+
+		// check if index is -1
+		// 1 byte -> 255, 2 byte -> 65535
+		else if (val == ((1 << size * 8) - 1)) index = -1;
+		else index = val;
+	}
+
+	inline void skip_Index(std::uint8_t size) {
+		ifs_.seekg(size, std::ios_base::cur);
+	}
+
+	// maybe unused
+	// uint8_t -> UTF8, uint16_t -> UTF16
+	template<typename T, std::enable_if_t<std::is_same_v<T, std::uint8_t> || std::is_same_v<T, std::uint16_t>, std::nullptr_t> = nullptr>
+	inline void read_TextBuf(std::vector<T>& textBuf) {
+		std::int32_t length{};
+		read_Int(length);
+		ifs_.read((char*)textBuf.data(), length);
+	}
+
+	inline void skip_TextBuf() {
+		std::int32_t length{};
+		read_Int(length);
+		ifs_.seekg(length, std::ios_base::cur);
 	}
 
 public:
-	void load(const std::filesystem::path&, std::vector<PMXVertexAttribute>& vertexData, std::vector<std::uint16_t>& indexData, std::vector<std::filesystem::path>& texturePathTable, std::vector<PMXMaterial>& materials);
+	void load(const std::filesystem::path& path, PMXData& data);
 };

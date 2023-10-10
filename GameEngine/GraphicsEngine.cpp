@@ -1015,22 +1015,17 @@ void GraphicsEngine::initialize(SDL_Window* window, const char* applicationName,
 	createDefaultFramebuffers();
 
 	PMXLoader loader{};
-	std::vector<PMXVertexAttribute> vertexData{};
-	std::vector<uint16_t> indexData{};
-	std::vector<std::filesystem::path> texturePathTable{};
-	std::vector<PMXMaterial> materials{};
-	loader.load("assets\\Tda式改変ミク　JKStyle\\Tda式改変ミク　JKStyle.pmx", vertexData, indexData, texturePathTable, materials);
-	//loader.load("assets\\パイモン\\パイモン.pmx", vertexData, indexData, texturePathTable, materials);
-	//loader.load("assets\\蛍\\蛍.pmx", vertexData, indexData, texturePathTable, materials);
+	PMXData modelData{};
+	loader.load("assets\\Tda式改変ミク　JKStyle\\Tda式改変ミク　JKStyle.pmx", modelData);
 
-	textures_.resize(texturePathTable.size());
-	for (auto i = 0; i < texturePathTable.size(); ++i) {
+	textures_.resize(modelData.texturePaths.size());
+	for (auto i = 0; i < textures_.size(); ++i) {
 		//std::cout << texturePathTable[i] << std::endl;
 		TexLoader loader{};
 		VkExtent3D imageSize{};
 		VkFormat imageFormat{};
 		std::vector<std::uint8_t> imageData{};
-		if (loader.load(texturePathTable[i], imageSize, imageFormat, imageData)) {
+		if (loader.load(modelData.texturePaths[i], imageSize, imageFormat, imageData)) {
 			std::cout << "success" << std::endl;
 			createTexture(imageData, imageFormat, imageSize, textures_[i]);
 		}
@@ -1059,6 +1054,28 @@ void GraphicsEngine::initialize(SDL_Window* window, const char* applicationName,
 		createConstantUnifromBuffer(&materialBufferObject, materialBuffers_[i]);
 	}
 
+	for (auto i = 0; i < bones.size(); ++i) {
+		std::cout << "bone #" << i << std::endl;
+		std::cout << "position x: " << bones[i].position.x << ", y: " << bones[i].position.y << ", z: " << bones[i].position.z << std::endl;
+		std::cout << "parent index: " << bones[i].parentIndex << std::endl;
+		std::cout << "hierarchy: " << bones[i].hierarchy << std::endl;
+
+		if (bones[i].flags & 0x0020) std::cout << "IK" << std::endl;
+
+		if (bones[i].flags & 0x0080) std::cout << "local transform: parent" << std::endl;
+		else std::cout << "local transform: others" << std::endl;
+
+		if (bones[i].flags & 0x0100) std::cout << "rotation" << std::endl;
+
+		if (bones[i].flags & 0x0200) std::cout << "translation" << std::endl;
+
+		if (bones[i].flags & 0x1000) std::cout << "after physics" << std::endl;
+
+		if (bones[i].flags & 0x2000) std::cout << "external parent" << std::endl;
+
+		std::cout << std::endl;
+	}
+
 	numIndices_ = static_cast<std::uint32_t>(indexData.size());
 	materials_ = std::move(materials);
 
@@ -1074,7 +1091,7 @@ void GraphicsEngine::initialize(SDL_Window* window, const char* applicationName,
 	defaultDescriptorSets_.resize(materials_.size());
 
 	createDefaultDescriptorSetLayout();
-	createDefaultDescriptorPool(materials_.size());
+	createDefaultDescriptorPool(static_cast<std::uint32_t>(materials_.size()));
 	for (auto i = 0; i < materials_.size(); ++i) {
 		auto& texture = static_cast<std::int8_t>(materials_[i].textureIndex) != -1 ? textures_[materials_[i].textureIndex] : textures_[0];
 		auto& sphere = static_cast<std::int8_t>(materials_[i].sphereIndex) != -1 ? textures_[materials_[i].sphereIndex] : textures_[0];

@@ -10,7 +10,6 @@
 #include "GraphicsEngine.h"
 #include "GLSLCompiler.h"
 
-// fuck Windows
 #ifdef _WIN32
 #include <Windows.h>
 #endif
