@@ -428,7 +428,7 @@ void GraphicsEngine::allocateDeviceMemory(const T& destObject, VkDeviceMemory& d
 }
 
 template<typename T>
-void GraphicsEngine::createVertexBuffer(const std::vector<T>& data, VertexBuffer<T>& buffer) {
+void GraphicsEngine::createVertexBuffer(const std::vector<T>& data, VertexBuffer& buffer) {
 
 	auto bufferSize = sizeof(T) * data.size();
 	createBuffer(bufferSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, buffer.buffer);
@@ -479,7 +479,7 @@ void GraphicsEngine::createUniformBuffer(UniformBuffer<T>& buffer) {
 }
 
 template<typename T>
-void GraphicsEngine::createConstantUnifromBuffer(const T* data, UniformBuffer<T>& buffer) {
+void GraphicsEngine::createConstantUnifromBuffer(const T& data, UniformBuffer<T>& buffer) {
 
 	createBuffer(sizeof(T), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, buffer.buffer);
 
@@ -488,7 +488,7 @@ void GraphicsEngine::createConstantUnifromBuffer(const T* data, UniformBuffer<T>
 	std::uint8_t* mappedMemory{};
 	VK_CHECK(vkMapMemory(device_, buffer.memory, 0, sizeof(T), 0, reinterpret_cast<void**>(&mappedMemory)));
 
-	std::memcpy(mappedMemory, data, sizeof(T));
+	std::memcpy(mappedMemory, &data, sizeof(T));
 
 	vkUnmapMemory(device_, buffer.memory);
 }
@@ -755,17 +755,20 @@ void GraphicsEngine::createDefaultGraphicsPipeline() {
 	stageInfo[1].pName = "main";
 
 	std::array<VkVertexInputBindingDescription, 1> inputBindingDesc = {
-	VkVertexInputBindingDescription{0, sizeof(PMXVertexAttribute), VK_VERTEX_INPUT_RATE_VERTEX},
+	VkVertexInputBindingDescription{0, sizeof(PMX_Vertex), VK_VERTEX_INPUT_RATE_VERTEX},
 	};
 
-	std::array<VkVertexInputAttributeDescription, 7> inputAttributeDesc = {
-		VkVertexInputAttributeDescription{0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(PMXVertexAttribute, position)},
-		VkVertexInputAttributeDescription{1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(PMXVertexAttribute, normal)},
-		VkVertexInputAttributeDescription{2, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(PMXVertexAttribute, uv)},
-		VkVertexInputAttributeDescription{3, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(PMXVertexAttribute, a_uv1)},
-		VkVertexInputAttributeDescription{4, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(PMXVertexAttribute, a_uv2)},
-		VkVertexInputAttributeDescription{5, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(PMXVertexAttribute, a_uv3)},
-		VkVertexInputAttributeDescription{6, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(PMXVertexAttribute, a_uv4)},
+	std::array<VkVertexInputAttributeDescription, 10> inputAttributeDesc = {
+		VkVertexInputAttributeDescription{0, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(PMX_Vertex, position)},
+		VkVertexInputAttributeDescription{1, 0, VK_FORMAT_R32G32B32_SFLOAT, offsetof(PMX_Vertex, normal)},
+		VkVertexInputAttributeDescription{2, 0, VK_FORMAT_R32G32_SFLOAT, offsetof(PMX_Vertex, uv)},
+		VkVertexInputAttributeDescription{3, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(PMX_Vertex, additionalUV[0])},
+		VkVertexInputAttributeDescription{4, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(PMX_Vertex, additionalUV[1])},
+		VkVertexInputAttributeDescription{5, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(PMX_Vertex, additionalUV[2])},
+		VkVertexInputAttributeDescription{6, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(PMX_Vertex, additionalUV[3])},
+		VkVertexInputAttributeDescription{7, 0, VK_FORMAT_R32G32B32A32_SINT, offsetof(PMX_Vertex, boneIndices)},
+		VkVertexInputAttributeDescription{8, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(PMX_Vertex, boneWeights)},
+		VkVertexInputAttributeDescription{9, 0, VK_FORMAT_R32_SFLOAT, offsetof(PMX_Vertex, edgeMult)},
 	};
 
 	VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
@@ -1020,7 +1023,6 @@ void GraphicsEngine::initialize(SDL_Window* window, const char* applicationName,
 
 	textures_.resize(modelData.texturePaths.size());
 	for (auto i = 0; i < textures_.size(); ++i) {
-		//std::cout << texturePathTable[i] << std::endl;
 		TexLoader loader{};
 		VkExtent3D imageSize{};
 		VkFormat imageFormat{};
@@ -1035,52 +1037,22 @@ void GraphicsEngine::initialize(SDL_Window* window, const char* applicationName,
 		}
 	}
 
-	materialBuffers_.resize(materials.size());
+	materialBuffers_.resize(modelData.materials.size());
 
-	for (auto i = 0; i < materials.size(); ++i) {
-		std::cout << "material #" << i << std::endl;
-		std::cout << "texture index:" << materials[i].textureIndex << std::endl;
-		std::cout << "sphere index: " << materials[i].sphereIndex << std::endl;
-		std::cout << "toon index: " << materials[i].toonIndex << std::endl << std::endl;
-		MaterialBufferObject materialBufferObject{};
-		materialBufferObject.diffuse = materials[i].color.diffuse;
-		materialBufferObject.specular = materials[i].color.specular;
-		materialBufferObject.specCoef = materials[i].color.specCoef;
-		materialBufferObject.ambient = materials[i].color.ambient;
-		materialBufferObject.isTextureUsed = (static_cast<std::int8_t>(materials[i].textureIndex) >= 0);
-		materialBufferObject.isSphereUsed = (static_cast<std::int8_t>(materials[i].sphereIndex) >= 0);
-		materialBufferObject.isToonUsed = (static_cast<std::int8_t>(materials[i].toonIndex) >= 0);
-		std::cout << std::boolalpha << materialBufferObject.isToonUsed << std::endl;
-		createConstantUnifromBuffer(&materialBufferObject, materialBuffers_[i]);
+	materials_ = std::move(modelData.materials);
+
+	createVertexBuffer(modelData.vertices, vertexBuffer_);
+
+	if (std::holds_alternative<std::vector<std::uint16_t>>(modelData.indices)) {
+		createIndexBuffer(std::get<std::vector<std::uint16_t>>(modelData.indices), indexBuffer_);
 	}
-
-	for (auto i = 0; i < bones.size(); ++i) {
-		std::cout << "bone #" << i << std::endl;
-		std::cout << "position x: " << bones[i].position.x << ", y: " << bones[i].position.y << ", z: " << bones[i].position.z << std::endl;
-		std::cout << "parent index: " << bones[i].parentIndex << std::endl;
-		std::cout << "hierarchy: " << bones[i].hierarchy << std::endl;
-
-		if (bones[i].flags & 0x0020) std::cout << "IK" << std::endl;
-
-		if (bones[i].flags & 0x0080) std::cout << "local transform: parent" << std::endl;
-		else std::cout << "local transform: others" << std::endl;
-
-		if (bones[i].flags & 0x0100) std::cout << "rotation" << std::endl;
-
-		if (bones[i].flags & 0x0200) std::cout << "translation" << std::endl;
-
-		if (bones[i].flags & 0x1000) std::cout << "after physics" << std::endl;
-
-		if (bones[i].flags & 0x2000) std::cout << "external parent" << std::endl;
-
-		std::cout << std::endl;
+	else if (std::holds_alternative<std::vector<std::uint32_t>>(modelData.indices)) {
+		createIndexBuffer(std::get<std::vector<std::uint32_t>>(modelData.indices), indexBuffer_);
 	}
-
-	numIndices_ = static_cast<std::uint32_t>(indexData.size());
-	materials_ = std::move(materials);
-
-	createVertexBuffer(vertexData, vertexBuffer_);
-	createIndexBuffer(indexData, indexBuffer_);
+	else {
+		std::cerr << "index data has invalid type" << std::endl;
+		std::exit(EXIT_FAILURE);
+	}
 
 	createShaderModule("basic.vert.spv", "basic.frag.spv");
 
@@ -1093,9 +1065,21 @@ void GraphicsEngine::initialize(SDL_Window* window, const char* applicationName,
 	createDefaultDescriptorSetLayout();
 	createDefaultDescriptorPool(static_cast<std::uint32_t>(materials_.size()));
 	for (auto i = 0; i < materials_.size(); ++i) {
-		auto& texture = static_cast<std::int8_t>(materials_[i].textureIndex) != -1 ? textures_[materials_[i].textureIndex] : textures_[0];
-		auto& sphere = static_cast<std::int8_t>(materials_[i].sphereIndex) != -1 ? textures_[materials_[i].sphereIndex] : textures_[0];
-		auto& toon = static_cast<std::int8_t>(materials_[i].toonIndex) != -1 ? textures_[materials_[i].toonIndex] : textures_[0];
+
+		MaterialBufferObject bufferObject{
+			materials_[i].diffuse,
+			materials_[i].specular,
+			materials_[i].specCoef,
+			materials_[i].ambient,
+			materials_[i].textureIndex >= 0,
+			materials_[i].sphereIndex >= 0,
+			materials_[i].toonIndex >= 0,
+		};
+		createConstantUnifromBuffer(bufferObject, materialBuffers_[i]);
+
+		auto& texture = materials_[i].textureIndex != -1 ? textures_[materials_[i].textureIndex] : textures_[0];
+		auto& sphere = materials_[i].sphereIndex != -1 ? textures_[materials_[i].sphereIndex] : textures_[0];
+		auto& toon = materials_[i].toonIndex != -1 ? textures_[materials_[i].toonIndex] : textures_[0];
 
 		createDefaultDescriptorSets(materialBuffers_[i], texture, sphere, toon, defaultDescriptorSets_[i]);
 	}
@@ -1109,13 +1093,10 @@ void GraphicsEngine::initialize(SDL_Window* window, const char* applicationName,
 void GraphicsEngine::draw() {
 	std::size_t offset = 0;
 
-	//auto model = glm::rotate(glm::mat4(1.0f), glm::radians(static_cast<float>(frame_)), glm::vec3(1.0f, 0.0f, 0.0f));
-	//model *= glm::rotate(glm::mat4(1.0f), glm::radians(static_cast<float>(frame_ * 2)), glm::vec3(0.0f, 0.0f, 1.0f));
-	//auto model = glm::mat4(1.0f);
 	auto model = glm::rotate(glm::mat4(1.0f), glm::radians(static_cast<float>(frame_)), glm::vec3(0.0f, 1.0f, 0.0f));
 	++frame_;
+
 	float cameraLength = 30.0f;
-	//auto view = glm::lookAt(glm::vec3(cameraLength * glm::cos(glm::radians(static_cast<float>(frame_))), 0.0f, cameraLength * glm::sin(glm::radians(static_cast<float>(frame_)))), glm::vec3(0.0f, 10.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 	auto view = glm::lookAt(glm::vec3(0.0f, 10.0f, -cameraLength), glm::vec3(0.0f, 10.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 
 	auto projection = glm::perspective(glm::radians(45.0f), static_cast<float>(imageSize_.width) / imageSize_.height, 0.1f, 100.0f);

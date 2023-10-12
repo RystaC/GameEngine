@@ -140,7 +140,6 @@
     <ClCompile Include="main.cpp" />
     <ClCompile Include="PMXLoader.cpp" />
     <ClCompile Include="TexLoader.cpp" />
-    <ClCompile Include="utf16to8.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="DDSLoader.h" />
@@ -149,7 +148,6 @@
     <ClInclude Include="PMXLoader.h" />
     <ClInclude Include="stb_image.h" />
     <ClInclude Include="TexLoader.h" />
-    <ClInclude Include="utf16to8.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="basic.frag.glsl" />

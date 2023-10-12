@@ -53,10 +53,7 @@ class GraphicsEngine {
 	static constexpr VkFormat desiredFormat = VK_FORMAT_B8G8R8A8_UNORM;
 	static constexpr VkFormat desiredDepthFormat = VK_FORMAT_D32_SFLOAT;
 
-	template<typename T>
 	struct VertexBuffer {
-		using type = T;
-
 		VkBuffer buffer;
 		VkDeviceMemory memory;
 	};
@@ -113,7 +110,7 @@ class GraphicsEngine {
 	std::vector<VkFramebuffer> defaultFramebuffers_;
 	std::uint32_t currentFrameIndex_;
 
-	VertexBuffer<PMXVertexAttribute> vertexBuffer_;
+	VertexBuffer vertexBuffer_;
 
 	IndexBuffer indexBuffer_;
 
@@ -138,7 +135,7 @@ class GraphicsEngine {
 	VkPipeline defaultGraphicsPipeline_;
 
 	std::uint32_t numIndices_;
-	std::vector<PMXMaterial> materials_;
+	std::vector<PMX_Material> materials_;
 
 	// resorce creation
 
@@ -168,7 +165,7 @@ class GraphicsEngine {
 	void allocateDeviceMemory(const T&, VkDeviceMemory&, VkMemoryPropertyFlags);
 
 	template<typename T>
-	void createVertexBuffer(const std::vector<T>&, VertexBuffer<T>&);
+	void createVertexBuffer(const std::vector<T>&, VertexBuffer&);
 
 	template<typename T, std::enable_if_t<std::is_same_v<T, std::uint16_t> || std::is_same_v<T, std::uint32_t>, std::nullptr_t> = nullptr>
 	void createIndexBuffer(const std::vector<T>&, IndexBuffer&);
@@ -177,7 +174,7 @@ class GraphicsEngine {
 	void createUniformBuffer(UniformBuffer<T>&);
 
 	template<typename T>
-	void createConstantUnifromBuffer(const T*, UniformBuffer<T>&);
+	void createConstantUnifromBuffer(const T&, UniformBuffer<T>&);
 
 	void createTexture(const std::vector<std::uint8_t>&, VkFormat, const VkExtent3D&, Texture&);
 	void createTextureSampler();

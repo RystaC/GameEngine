@@ -46,6 +46,8 @@ void PMXLoader::readVertexData(std::vector<PMX_Vertex>& vertices) {
 	read_Int(verticesCount);
 	vertices.resize(verticesCount);
 
+	//std::cout << "# of vertex: " << verticesCount << std::endl;
+
 	for (auto i = 0; i < verticesCount; ++i) {
 		// position
 		read_Float3(vertices[i].position);
@@ -55,7 +57,7 @@ void PMXLoader::readVertexData(std::vector<PMX_Vertex>& vertices) {
 		read_Float2(vertices[i].uv);
 
 		// additional UVs (0 ~ 4)
-		for (auto j = 0; j < getIndexSize(Index::ADDITIONAL_UV); ++j) read_Float4(vertices[i].addionalUV[j]);
+		for (auto j = 0; j < getIndexSize(Index::ADDITIONAL_UV); ++j) read_Float4(vertices[i].additionalUV[j]);
 
 		// bone index & weight
 		std::uint8_t weightType{};
@@ -110,6 +112,8 @@ void PMXLoader::readFaceData(PMX_Indices& indices) {
 	std::int32_t indicesCount{};
 	read_Int(indicesCount);
 
+	//std::cout << "# of index: " << indicesCount << std::endl;
+
 	if (getIndexSize(Index::VERTEX) == 1 || getIndexSize(Index::VERTEX) == 2) {
 		indices = std::vector<uint16_t>(indicesCount);
 		for (auto i = 0; i < indicesCount; ++i) {
@@ -137,6 +141,8 @@ void PMXLoader::readTextureData(std::vector<PMX_TexturePath>& texturePaths) {
 	read_Int(pathsCount);
 	texturePaths.resize(pathsCount);
 
+	//std::cout << "# of texture: " << pathsCount << std::endl;
+
 	// UTF16
 	if (getIndexSize(Index::ENCODE) == 0) {
 		for (auto i = 0; i < pathsCount; ++i) {
@@ -163,6 +169,8 @@ void PMXLoader::readMaterialData(std::vector<PMX_Material>& materials) {
 	std::int32_t materialsCount{};
 	read_Int(materialsCount);
 	materials.resize(materialsCount);
+
+	//std::cout << "# of material: " << materialsCount << std::endl;
 
 	// accumulate face index for offset
 	std::int32_t indexOffset = 0;
@@ -221,6 +229,8 @@ void PMXLoader::readBoneData(std::vector<PMX_Bone>& bones) {
 	std::int32_t bonesCount{};
 	read_Int(bonesCount);
 	bones.resize(bonesCount);
+
+	//std::cout << "# of bone: " << bonesCount << std::endl;
 
 	for (auto i = 0; i < bonesCount; ++i) {
 		// name
@@ -300,6 +310,8 @@ void PMXLoader::readBoneData(std::vector<PMX_Bone>& bones) {
 void PMXLoader::readMorphData(PMX_Morphs& morphs) {
 	std::int32_t morphsCount{};
 	read_Int(morphsCount);
+
+	//std::cout << "# of morph: " << morphsCount << std::endl;
 	
 	for (auto i = 0; i < morphsCount; ++i) {
 		// name
@@ -482,6 +494,8 @@ void PMXLoader::readFrameData() {
 	std::int32_t framesCount{};
 	read_Int(framesCount);
 
+	//std::cout << "# of frame: " << framesCount << std::endl;
+
 	for (auto i = 0; i < framesCount; ++i) {
 		// name
 		skip_TextBuf();
@@ -495,7 +509,7 @@ void PMXLoader::readFrameData() {
 		std::int32_t count{};
 		read_Int(count);
 
-		for (auto j = 0; i < count; ++j) {
+		for (auto j = 0; j < count; ++j) {
 			// target type
 			std::uint8_t type{};
 			read_Byte(type);
@@ -512,6 +526,8 @@ void PMXLoader::readRigidData(std::vector<PMX_Rigid>& rigids) {
 	std::int32_t rigidsCount{};
 	read_Int(rigidsCount);
 	rigids.resize(rigidsCount);
+
+	//std::cout << "# of rigid: " << rigidsCount << std::endl;
 
 	for (auto i = 0; i < rigidsCount; ++i) {
 		// name
@@ -557,6 +573,8 @@ void PMXLoader::readJointData(std::vector<PMX_Joint>& joints) {
 	std::int32_t jointsCount{};
 	read_Int(jointsCount);
 	joints.resize(jointsCount);
+
+	//std::cout << "# of joint: " << jointsCount << std::endl;
 
 	for (auto i = 0; i < jointsCount; ++i) {
 		// name

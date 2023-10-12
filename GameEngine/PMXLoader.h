@@ -11,17 +11,12 @@
 #include <variant>
 #include <vector>
 
-#include "utf16to8.h"
-
-#define UTF8_TEXT(text_buf) (const char*)(text_buf).data()
-#define UTF16_TEXT(text_buf) (const char*)utf16to8((text_buf)).data()
-
 struct PMX_Vertex {
 	glm::vec3 position;
 	glm::vec3 normal;
 	glm::vec2 uv;
 	// additional UV
-	glm::vec4 addionalUV[4];
+	glm::vec4 additionalUV[4];
 	// bones
 	glm::ivec4 boneIndices;
 	glm::vec4 boneWeights;
@@ -171,12 +166,6 @@ struct PMXData {
 };
 
 class PMXLoader {
-	// text encode
-	enum class Encode {
-		UTF16LE,
-		UTF8,
-	};
-
 	// index for size information
 	enum class Index {
 		ENCODE = 0,
@@ -255,6 +244,7 @@ inline void skip_##name() { ifs_.seekg(sizeof(type), std::ios_base::cur); }
 	inline void read_TextBuf(std::vector<T>& textBuf) {
 		std::int32_t length{};
 		read_Int(length);
+		textBuf.resize(length / sizeof(T));
 		ifs_.read((char*)textBuf.data(), length);
 	}
 

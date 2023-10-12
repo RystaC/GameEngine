@@ -7,6 +7,9 @@ layout(location = 3) in vec4 a_uv1;
 layout(location = 4) in vec4 a_uv2;
 layout(location = 5) in vec4 a_uv3;
 layout(location = 6) in vec4 a_uv4;
+layout(location = 7) in ivec4 boneIndices;
+layout(location = 8) in vec4 boneWeights;
+layout(location = 9) in float edgeMult;
 
 layout(location = 0) out vec3 viewPosition;
 layout(location = 1) out vec3 viewNormal;
