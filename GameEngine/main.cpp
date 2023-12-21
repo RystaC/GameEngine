@@ -10,15 +10,7 @@
 #include "GraphicsEngine.h"
 #include "GLSLCompiler.h"
 
-#ifdef _WIN32
-#include <Windows.h>
-#endif
-
 int main(int argc, char* argv[]) {
-#ifdef _WIN32
-	UINT cp = GetConsoleOutputCP();
-	SetConsoleOutputCP(65001);
-#endif
 
 	GLSLCompiler compiler{};
 
@@ -68,10 +60,6 @@ int main(int argc, char* argv[]) {
 	}
 
 	SDL_Quit();
-
-#ifdef _WIN32
-	SetConsoleOutputCP(cp);
-#endif
 
 	return 0;
 }

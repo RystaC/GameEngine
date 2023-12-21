@@ -493,6 +493,17 @@ void GraphicsEngine::createConstantUnifromBuffer(const T& data, UniformBuffer<T>
 	vkUnmapMemory(device_, buffer.memory);
 }
 
+void GraphicsEngine::createStorageBuffer(std::size_t size, StorageBuffer& buffer) {
+
+	buffer.size = size;
+
+	createBuffer(size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, buffer.buffer);
+
+	allocateDeviceMemory(buffer.buffer, buffer.memory, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT);
+
+	VK_CHECK(vkMapMemory(device_, buffer.memory, 0, size, 0, reinterpret_cast<void**>(&buffer.pointer)));
+}
+
 void GraphicsEngine::createTexture(const std::vector<std::uint8_t>& data, VkFormat format, const VkExtent3D& size, Texture& texture) {
 
 	createImage2D(format, size, VK_IMAGE_USAGE_SAMPLED_BIT, VK_SAMPLE_COUNT_1_BIT, texture.image);
@@ -527,6 +538,28 @@ void GraphicsEngine::createTextureSampler() {
 	samplerInfo.maxLod = 0.0f;
 
 	VK_CHECK(vkCreateSampler(device_, &samplerInfo, allocator, &textureSampler_));
+}
+
+void GraphicsEngine::createToonSampler() {
+	VkSamplerCreateInfo samplerInfo{};
+	samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+	samplerInfo.minFilter = VK_FILTER_LINEAR;
+	samplerInfo.magFilter = VK_FILTER_LINEAR;
+	samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	samplerInfo.anisotropyEnable = VK_TRUE;
+	samplerInfo.maxAnisotropy = properties_.limits.maxSamplerAnisotropy;
+	samplerInfo.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK;
+	samplerInfo.unnormalizedCoordinates = VK_FALSE;
+	samplerInfo.compareEnable = VK_FALSE;
+	samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
+	samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+	samplerInfo.mipLodBias = 0.0f;
+	samplerInfo.minLod = 0.0f;
+	samplerInfo.maxLod = 0.0f;
+
+	VK_CHECK(vkCreateSampler(device_, &samplerInfo, allocator, &toonSampler_));
 }
 
 void GraphicsEngine::createShaderModule(const char* vertexSPIRVPath, const char* fragmentSPIRVPath) {
@@ -606,7 +639,13 @@ void GraphicsEngine::createDefaultDescriptorSetLayout() {
 	toonLayoutBinding.descriptorCount = 1;
 	toonLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
-	std::array<VkDescriptorSetLayoutBinding, 5> bindings{ transformLayoutBinding, materialLayoutBinding, textureLayoutBinding, sphereLayoutBinding, toonLayoutBinding };
+	VkDescriptorSetLayoutBinding boneLayoutBinding{};
+	boneLayoutBinding.binding = 5;
+	boneLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	boneLayoutBinding.descriptorCount = 1;
+	boneLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+
+	std::array<VkDescriptorSetLayoutBinding, 6> bindings{ transformLayoutBinding, materialLayoutBinding, textureLayoutBinding, sphereLayoutBinding, toonLayoutBinding, boneLayoutBinding };
 
 	VkDescriptorSetLayoutCreateInfo layoutInfo{};
 	layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -637,7 +676,11 @@ void GraphicsEngine::createDefaultDescriptorPool(std::uint32_t descriptorSetCoun
 	toonPoolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 	toonPoolSize.descriptorCount = 1;
 
-	std::array<VkDescriptorPoolSize, 5> poolSizes{ transformPoolSize, materialPoolSize, texturePoolSize, spherePoolSize, toonPoolSize };
+	VkDescriptorPoolSize bonePoolSize{};
+	bonePoolSize.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	bonePoolSize.descriptorCount = 1;
+
+	std::array<VkDescriptorPoolSize, 6> poolSizes{ transformPoolSize, materialPoolSize, texturePoolSize, spherePoolSize, toonPoolSize, bonePoolSize };
 
 	VkDescriptorPoolCreateInfo poolInfo{};
 	poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -682,7 +725,12 @@ void GraphicsEngine::createDefaultDescriptorSets(const UniformBuffer<MaterialBuf
 	VkDescriptorImageInfo toonInfo{};
 	toonInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 	toonInfo.imageView = toonTexture.view;
-	toonInfo.sampler = textureSampler_;
+	toonInfo.sampler = toonSampler_;
+
+	VkDescriptorBufferInfo boneBufferInfo{};
+	boneBufferInfo.buffer = boneBuffer_.buffer;
+	boneBufferInfo.offset = 0;
+	boneBufferInfo.range = boneBuffer_.size;
 
 	VkWriteDescriptorSet descriptorTransformWrite{};
 	descriptorTransformWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -729,7 +777,16 @@ void GraphicsEngine::createDefaultDescriptorSets(const UniformBuffer<MaterialBuf
 	descriptorToonWrite.descriptorCount = 1;
 	descriptorToonWrite.pImageInfo = &toonInfo;
 
-	std::array<VkWriteDescriptorSet, 5> descriptorWrites{ descriptorTransformWrite, descriptorMaterialWrite, descriptorTextureWrite, descriptorSphereWrite, descriptorToonWrite };
+	VkWriteDescriptorSet descriptorBoneWrite{};
+	descriptorBoneWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	descriptorBoneWrite.dstSet = descriptorSet;
+	descriptorBoneWrite.dstBinding = 5;
+	descriptorBoneWrite.dstArrayElement = 0;
+	descriptorBoneWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	descriptorBoneWrite.descriptorCount = 1;
+	descriptorBoneWrite.pBufferInfo = &boneBufferInfo;
+
+	std::array<VkWriteDescriptorSet, 6> descriptorWrites{ descriptorTransformWrite, descriptorMaterialWrite, descriptorTextureWrite, descriptorSphereWrite, descriptorToonWrite, descriptorBoneWrite };
 
 	vkUpdateDescriptorSets(device_, static_cast<std::uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 }
@@ -1023,6 +1080,7 @@ void GraphicsEngine::initialize(SDL_Window* window, const char* applicationName,
 
 	textures_.resize(modelData.texturePaths.size());
 	for (auto i = 0; i < textures_.size(); ++i) {
+		std::cout << modelData.texturePaths[i] << std::endl;
 		TexLoader loader{};
 		VkExtent3D imageSize{};
 		VkFormat imageFormat{};
@@ -1036,6 +1094,33 @@ void GraphicsEngine::initialize(SDL_Window* window, const char* applicationName,
 			std::exit(EXIT_FAILURE);
 		}
 	}
+
+	/*
+	for (auto i = 0; i < modelData.vertices.size(); ++i) {
+		std::cout << "vertices #" << i << std::endl;
+		std::cout << "bone index 1: " << modelData.vertices[i].boneIndices.x << ", 2: " << modelData.vertices[i].boneIndices.y << ", 3: " << modelData.vertices[i].boneIndices.z << ", 4: " << modelData.vertices[i].boneIndices.w << std::endl;
+		std::cout << "bone weight 1: " << modelData.vertices[i].boneWeights.x << ", 2: " << modelData.vertices[i].boneWeights.y << ", 3: " << modelData.vertices[i].boneWeights.z << ", 4: " << modelData.vertices[i].boneWeights.w << std::endl;
+	}
+	*/
+
+	bones_.resize(modelData.bones.size(), Bone{ glm::mat4(1.0f) });
+
+	//bones_[0].matrix = glm::rotate(glm::mat4(1.0f), glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+	bones_[41].matrix = glm::rotate(glm::mat4(1.0f), glm::radians(-70.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+	bones_[42].matrix = glm::rotate(glm::mat4(1.0f), glm::radians(-140.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+	bones_[60].matrix = glm::rotate(glm::mat4(1.0f), glm::radians(-35.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+	for (auto i = 0; i < bones_.size(); ++i) {
+		auto localMatrix = glm::translate(glm::mat4(1.0f), -modelData.bones[i].position);
+		auto globalMatrix = glm::translate(glm::mat4(1.0f), modelData.bones[i].position);
+		if (modelData.bones[i].parentIndex == -1) bones_[i].matrix = globalMatrix * bones_[i].matrix * localMatrix;
+		else bones_[i].matrix = globalMatrix * bones_[i].matrix * localMatrix * bones_[modelData.bones[i].parentIndex].matrix;
+	}
+
+	createStorageBuffer(sizeof(Bone) * bones_.size(), boneBuffer_);
+
+	std::memcpy(boneBuffer_.pointer, bones_.data(), sizeof(Bone) * bones_.size());
+
+	//for (const auto& bone : modelData.bones) std::cout << "bone #" << bone.index << ", parent: " << bone.parentIndex << std::endl;
 
 	materialBuffers_.resize(modelData.materials.size());
 
@@ -1059,6 +1144,7 @@ void GraphicsEngine::initialize(SDL_Window* window, const char* applicationName,
 	createUniformBuffer(transformBuffer_);
 
 	createTextureSampler();
+	createToonSampler();
 
 	defaultDescriptorSets_.resize(materials_.size());
 

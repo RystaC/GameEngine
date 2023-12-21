@@ -67,11 +67,13 @@ void PMXLoader::readVertexData(std::vector<PMX_Vertex>& vertices) {
 		// BDEF1
 		case 0:
 			read_Index(getIndexSize(Index::BONE), vertices[i].boneIndices[0]);
+			vertices[i].boneIndices[1] = vertices[i].boneIndices[2] = vertices[i].boneIndices[3] = -1;
 			break;
 		// BDEF2
 		case 1:
 			read_Index(getIndexSize(Index::BONE), vertices[i].boneIndices[0]);
 			read_Index(getIndexSize(Index::BONE), vertices[i].boneIndices[1]);
+			vertices[i].boneIndices[2] = vertices[i].boneIndices[3] = -1;
 			read_Float(vertices[i].boneWeights[0]);
 			break;
 		// BDEF4
@@ -89,6 +91,7 @@ void PMXLoader::readVertexData(std::vector<PMX_Vertex>& vertices) {
 		case 3:
 			read_Index(getIndexSize(Index::BONE), vertices[i].boneIndices[0]);
 			read_Index(getIndexSize(Index::BONE), vertices[i].boneIndices[1]);
+			vertices[i].boneIndices[2] = vertices[i].boneIndices[3] = -1;
 			read_Float(vertices[i].boneWeights[0]);
 			// SDEF-C
 			skip_Float3();
@@ -233,10 +236,18 @@ void PMXLoader::readBoneData(std::vector<PMX_Bone>& bones) {
 	//std::cout << "# of bone: " << bonesCount << std::endl;
 
 	for (auto i = 0; i < bonesCount; ++i) {
+		bones[i].index = i;
 		// name
-		skip_TextBuf();
+		std::vector<std::uint16_t> name{}, name_en{};
+		//skip_TextBuf();
+		read_TextBuf(name);
 		// name (en)
-		skip_TextBuf();
+		//skip_TextBuf();
+		read_TextBuf(name_en);
+
+		std::cout << "bone #" << i << std::endl;
+		std::cout << std::filesystem::path(std::u16string(name.begin(), name.end())) << std::endl;
+		std::cout << std::filesystem::path(std::u16string(name_en.begin(), name_en.end())) << std::endl;
 
 		// position
 		read_Float3(bones[i].position);
@@ -304,14 +315,18 @@ void PMXLoader::readBoneData(std::vector<PMX_Bone>& bones) {
 				}
 			}
 		}
+		else {
+			bones[i].ik.targetIndex = -1;
+		}
 	}
 }
 
-void PMXLoader::readMorphData(PMX_Morphs& morphs) {
+void PMXLoader::readMorphData(std::vector<PMX_Morph>& morphs) {
 	std::int32_t morphsCount{};
 	read_Int(morphsCount);
+	morphs.resize(morphsCount);
 
-	//std::cout << "# of morph: " << morphsCount << std::endl;
+	// std::cout << "# of morph: " << morphsCount << std::endl;
 	
 	for (auto i = 0; i < morphsCount; ++i) {
 		// name
@@ -332,7 +347,8 @@ void PMXLoader::readMorphData(PMX_Morphs& morphs) {
 
 		switch (morphType) {
 		// group
-		case 0:
+		case PMX_Morph_Type::GROUP:
+			morphs[i] = std::vector<PMX_Morph_Group>(offsetsCount);
 			for (auto j = 0; j < offsetsCount; ++j) {
 				// morph index
 				std::int32_t index{};
@@ -341,11 +357,12 @@ void PMXLoader::readMorphData(PMX_Morphs& morphs) {
 				glm::float32_t rate{};
 				read_Float(rate);
 
-				morphs.groupMorphs.emplace_back(PMX_Morph_Group{ index, rate });
+				std::get<PMX_Morph_Type::GROUP>(morphs[i])[j] = PMX_Morph_Group{ index, rate };
 			}
 			break;
 		// vertex
-		case 1:
+		case PMX_Morph_Type::VERTEX:
+			morphs[i] = std::vector<PMX_Morph_Vertex>(offsetsCount);
 			for (auto j = 0; j < offsetsCount; ++j) {
 				// index
 				std::int32_t index{};
@@ -354,11 +371,12 @@ void PMXLoader::readMorphData(PMX_Morphs& morphs) {
 				glm::vec3 offset{};
 				read_Float3(offset);
 
-				morphs.vertexMorphs.emplace_back(PMX_Morph_Vertex{ index, offset });
+				std::get<PMX_Morph_Type::VERTEX>(morphs[i])[j] = PMX_Morph_Vertex{ index, offset };
 			}
 			break;
 		// bone
-		case 2:
+		case PMX_Morph_Type::BONE:
+			morphs[i] = std::vector<PMX_Morph_Bone>(offsetsCount);
 			for (auto j = 0; j < offsetsCount; ++j) {
 				// index
 				std::int32_t index{};
@@ -370,11 +388,12 @@ void PMXLoader::readMorphData(PMX_Morphs& morphs) {
 				glm::vec4 rotOffset_quat{};
 				read_Float4(rotOffset_quat);
 
-				morphs.boneMorphs.emplace_back(PMX_Morph_Bone{ index, transOffset, rotOffset_quat });
+				std::get<PMX_Morph_Type::BONE>(morphs[i])[j] = PMX_Morph_Bone{ index, transOffset, rotOffset_quat };
 			}
 			break;
 		// UV
-		case 3:
+		case PMX_Morph_Type::UV:
+			morphs[i] = PMX_Morph{ std::in_place_index<PMX_Morph_Type::UV>, std::vector<PMX_Morph_UV>(offsetsCount) };
 			for (auto j = 0; j < offsetsCount; ++j) {
 				// index
 				std::int32_t index{};
@@ -383,11 +402,12 @@ void PMXLoader::readMorphData(PMX_Morphs& morphs) {
 				glm::vec4 offset{};
 				read_Float4(offset);
 
-				morphs.uvMorphs.emplace_back(PMX_Morph_UV{ index, offset });
+				std::get<PMX_Morph_Type::UV>(morphs[i])[j] = PMX_Morph_UV{ index, offset };
 			}
 			break;
 		// additional UV 1
-		case 4:
+		case PMX_Morph_Type::ADD_UV1:
+			morphs[i] = PMX_Morph{ std::in_place_index<PMX_Morph_Type::ADD_UV1>, std::vector<PMX_Morph_UV>(offsetsCount) };
 			for (auto j = 0; j < offsetsCount; ++j) {
 				// index
 				std::int32_t index{};
@@ -396,11 +416,12 @@ void PMXLoader::readMorphData(PMX_Morphs& morphs) {
 				glm::vec4 offset{};
 				read_Float4(offset);
 
-				morphs.addUVMorphs1.emplace_back(PMX_Morph_UV{ index, offset });
+				std::get<PMX_Morph_Type::ADD_UV1>(morphs[i])[j] = PMX_Morph_UV{ index, offset };
 			}
 			break;
 		// additional UV 2
-		case 5:
+		case PMX_Morph_Type::ADD_UV2:
+			morphs[i] = PMX_Morph{ std::in_place_index<PMX_Morph_Type::ADD_UV2>, std::vector<PMX_Morph_UV>(offsetsCount) };
 			for (auto j = 0; j < offsetsCount; ++j) {
 				// index
 				std::int32_t index{};
@@ -409,11 +430,12 @@ void PMXLoader::readMorphData(PMX_Morphs& morphs) {
 				glm::vec4 offset{};
 				read_Float4(offset);
 
-				morphs.addUVMorphs2.emplace_back(PMX_Morph_UV{ index, offset });
+				std::get<PMX_Morph_Type::ADD_UV2>(morphs[i])[j] = PMX_Morph_UV{ index, offset };
 			}
 			break;
 		// additional UV 3
-		case 6:
+		case PMX_Morph_Type::ADD_UV3:
+			morphs[i] = PMX_Morph{ std::in_place_index<PMX_Morph_Type::ADD_UV3>, std::vector<PMX_Morph_UV>(offsetsCount) };
 			for (auto j = 0; j < offsetsCount; ++j) {
 				// index
 				std::int32_t index{};
@@ -422,11 +444,12 @@ void PMXLoader::readMorphData(PMX_Morphs& morphs) {
 				glm::vec4 offset{};
 				read_Float4(offset);
 
-				morphs.addUVMorphs3.emplace_back(PMX_Morph_UV{ index, offset });
+				std::get<PMX_Morph_Type::ADD_UV3>(morphs[i])[j] = PMX_Morph_UV{ index, offset };
 			}
 			break;
 		// additional UV 4
-		case 7:
+		case PMX_Morph_Type::ADD_UV4:
+			morphs[i] = PMX_Morph{ std::in_place_index<PMX_Morph_Type::ADD_UV4>, std::vector<PMX_Morph_UV>(offsetsCount) };
 			for (auto j = 0; j < offsetsCount; ++j) {
 				// index
 				std::int32_t index{};
@@ -435,18 +458,19 @@ void PMXLoader::readMorphData(PMX_Morphs& morphs) {
 				glm::vec4 offset{};
 				read_Float4(offset);
 
-				morphs.addUVMorphs4.emplace_back(PMX_Morph_UV{ index, offset });
+				std::get<PMX_Morph_Type::ADD_UV4>(morphs[i])[j] = PMX_Morph_UV{ index, offset };
 			}
 			break;
 		// material
-		case 8:
+		case PMX_Morph_Type::MATERIAL:
+			morphs[i] = std::vector<PMX_Morph_Group>(offsetsCount);
 			for (auto j = 0; j < offsetsCount; ++j) {
 				// index
 				std::int32_t index{};
 				read_Index(getIndexSize(Index::MATERIAL), index);
 				// calculation mode
-				std::uint8_t mode{};
-				read_Byte(mode);
+				std::uint8_t calcMode{};
+				read_Byte(calcMode);
 				// diffuse
 				glm::vec4 diffuse{};
 				read_Float4(diffuse);
@@ -475,10 +499,7 @@ void PMXLoader::readMorphData(PMX_Morphs& morphs) {
 				glm::vec4 toonCoef{};
 				read_Float4(toonCoef);
 
-				// add material morph
-				if(mode) morphs.materialAddMorphs.emplace_back(PMX_Morph_Material{ index, diffuse, specular, specCoef, ambient, edgeColor, edgeSize, textureCoef, sphereCoef, toonCoef });
-				// multiply material morph
-				else morphs.materialMulMorphs.emplace_back(PMX_Morph_Material{ index, diffuse, specular, specCoef, ambient, edgeColor, edgeSize, textureCoef, sphereCoef, toonCoef });
+				std::get<PMX_Morph_Type::MATERIAL>(morphs[i])[j] = PMX_Morph_Material{ index, calcMode, diffuse, specular, specCoef, ambient, edgeColor, edgeSize, textureCoef, sphereCoef, toonCoef };
 			}
 			break;
 

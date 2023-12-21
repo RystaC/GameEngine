@@ -4,6 +4,7 @@
 #include <SDL2/SDL_vulkan.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 #include <algorithm>
 #include <array>
@@ -43,6 +44,10 @@ struct MaterialBufferObject {
 	std::uint32_t isToonUsed;
 };
 
+struct Bone {
+	glm::mat4 matrix;
+};
+
 class GraphicsEngine {
 	// engine version information (requires C++17 or later)
 	static constexpr std::string_view engineName = "VulkanGraphicsEngine";
@@ -69,6 +74,13 @@ class GraphicsEngine {
 	struct UniformBuffer {
 		using type = T;
 
+		VkBuffer buffer;
+		VkDeviceMemory memory;
+		std::uint8_t* pointer;
+	};
+
+	struct StorageBuffer {
+		std::size_t size;
 		VkBuffer buffer;
 		VkDeviceMemory memory;
 		std::uint8_t* pointer;
@@ -115,14 +127,12 @@ class GraphicsEngine {
 	IndexBuffer indexBuffer_;
 
 	std::vector<Texture> textures_{};
-
-	VkImage textureImage_;
-	VkDeviceMemory textureImageMemory_;
-	VkImageView textureImageView_;
 	VkSampler textureSampler_;
+	VkSampler toonSampler_;
 
 	UniformBuffer<TransformBufferObject> transformBuffer_;
 	std::vector<UniformBuffer<MaterialBufferObject>> materialBuffers_;
+	StorageBuffer boneBuffer_;
 
 	VkShaderModule vertexShaderModule_;
 	VkShaderModule fragmentShaderModule_;
@@ -136,6 +146,7 @@ class GraphicsEngine {
 
 	std::uint32_t numIndices_;
 	std::vector<PMX_Material> materials_;
+	std::vector<Bone> bones_;
 
 	// resorce creation
 
@@ -172,12 +183,14 @@ class GraphicsEngine {
 
 	template<typename T>
 	void createUniformBuffer(UniformBuffer<T>&);
-
 	template<typename T>
 	void createConstantUnifromBuffer(const T&, UniformBuffer<T>&);
 
+	void createStorageBuffer(std::size_t, StorageBuffer&);
+
 	void createTexture(const std::vector<std::uint8_t>&, VkFormat, const VkExtent3D&, Texture&);
 	void createTextureSampler();
+	void createToonSampler();
 
 	void createShaderModule(const char*, const char*);
 

@@ -62,6 +62,7 @@ struct PMX_IK {
 };
 
 struct PMX_Bone {
+	std::int32_t index;
 	glm::vec3 position;
 	std::int32_t parentIndex;
 	std::int32_t hierarchy;
@@ -100,6 +101,7 @@ struct PMX_Morph_UV {
 
 struct PMX_Morph_Material {
 	std::int32_t index;
+	std::uint8_t calcMode;
 	glm::vec4 diffuse;
 	glm::vec3 specular;
 	glm::float32_t specCoef;
@@ -111,14 +113,29 @@ struct PMX_Morph_Material {
 	glm::vec4 toonCoef;
 };
 
-struct PMX_Morphs {
-	std::vector<PMX_Morph_Group> groupMorphs;
-	std::vector<PMX_Morph_Vertex> vertexMorphs;
-	std::vector<PMX_Morph_Bone> boneMorphs;
-	std::vector<PMX_Morph_UV> uvMorphs;
-	std::vector<PMX_Morph_UV> addUVMorphs1, addUVMorphs2, addUVMorphs3, addUVMorphs4;
-	std::vector<PMX_Morph_Material> materialAddMorphs, materialMulMorphs;
+enum PMX_Morph_Type {
+	GROUP = 0,
+	VERTEX,
+	BONE,
+	UV,
+	ADD_UV1,
+	ADD_UV2,
+	ADD_UV3,
+	ADD_UV4,
+	MATERIAL
 };
+
+using PMX_Morph = std::variant<
+	std::vector<PMX_Morph_Group>,
+	std::vector<PMX_Morph_Vertex>,
+	std::vector<PMX_Morph_Bone>,
+	std::vector<PMX_Morph_UV>,
+	std::vector<PMX_Morph_UV>,
+	std::vector<PMX_Morph_UV>,
+	std::vector<PMX_Morph_UV>,
+	std::vector<PMX_Morph_UV>,
+	std::vector<PMX_Morph_Material>
+>;
 
 struct PMX_Frame {
 };
@@ -159,7 +176,7 @@ struct PMXData {
 	std::vector<PMX_TexturePath> texturePaths;
 	std::vector<PMX_Material> materials;
 	std::vector<PMX_Bone> bones;
-	PMX_Morphs morphs;
+	std::vector<PMX_Morph> morphs;
 	// std::vector<PMX_Frame> frames;
 	std::vector<PMX_Rigid> rigids;
 	std::vector<PMX_Joint> joints;
@@ -194,7 +211,7 @@ class PMXLoader {
 	void readTextureData(std::vector<PMX_TexturePath>&);
 	void readMaterialData(std::vector<PMX_Material>&);
 	void readBoneData(std::vector<PMX_Bone>&);
-	void readMorphData(PMX_Morphs&);
+	void readMorphData(std::vector<PMX_Morph>&);
 	void readFrameData(/*std::vector<PMX_Frame>&*/);
 	void readRigidData(std::vector<PMX_Rigid>&);
 	void readJointData(std::vector<PMX_Joint>&);

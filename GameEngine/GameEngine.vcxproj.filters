@@ -1,64 +1,93 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
-    <Filter Include="ソース ファイル">
+    <Filter Include="glsl">
+      <UniqueIdentifier>{301f7071-9bf4-4845-bb38-4c91583c21dc}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="texture">
+      <UniqueIdentifier>{33d60956-c5d5-4ed2-8256-3f8a7d802eb5}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="pmx">
+      <UniqueIdentifier>{8cc32979-9208-4234-91b4-0dfdacf8a694}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="graphics">
+      <UniqueIdentifier>{7076e10b-35cd-4504-ac0a-881f74f78add}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="main">
       <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
       <Extensions>cpp;c;cc;cxx;c++;cppm;ixx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
     </Filter>
-    <Filter Include="ヘッダー ファイル">
-      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
-      <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
-    </Filter>
-    <Filter Include="シェーダー ファイル">
-      <UniqueIdentifier>{30f6d732-2a04-49fa-b466-b9aa4cb3cb9b}</UniqueIdentifier>
+    <Filter Include="wrapper">
+      <UniqueIdentifier>{a5a8bebf-bb97-44dd-8e8f-6ea3dff2bae2}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="GraphicsEngine.cpp">
-      <Filter>ソース ファイル</Filter>
-    </ClCompile>
     <ClCompile Include="main.cpp">
-      <Filter>ソース ファイル</Filter>
-    </ClCompile>
-    <ClCompile Include="PMXLoader.cpp">
-      <Filter>ソース ファイル</Filter>
+      <Filter>main</Filter>
     </ClCompile>
     <ClCompile Include="GLSLCompiler.cpp">
-      <Filter>ソース ファイル</Filter>
+      <Filter>glsl</Filter>
     </ClCompile>
     <ClCompile Include="DDSLoader.cpp">
-      <Filter>ソース ファイル</Filter>
+      <Filter>texture</Filter>
     </ClCompile>
     <ClCompile Include="TexLoader.cpp">
-      <Filter>ソース ファイル</Filter>
+      <Filter>texture</Filter>
+    </ClCompile>
+    <ClCompile Include="PMXLoader.cpp">
+      <Filter>pmx</Filter>
+    </ClCompile>
+    <ClCompile Include="GraphicsEngine.cpp">
+      <Filter>graphics</Filter>
+    </ClCompile>
+    <ClCompile Include="InstanceManager.cpp">
+      <Filter>wrapper</Filter>
+    </ClCompile>
+    <ClCompile Include="DeviceManager.cpp">
+      <Filter>wrapper</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="GraphicsEngine.h">
-      <Filter>ヘッダー ファイル</Filter>
-    </ClInclude>
-    <ClInclude Include="stb_image.h">
-      <Filter>ヘッダー ファイル</Filter>
-    </ClInclude>
-    <ClInclude Include="PMXLoader.h">
-      <Filter>ヘッダー ファイル</Filter>
-    </ClInclude>
     <ClInclude Include="GLSLCompiler.h">
-      <Filter>ヘッダー ファイル</Filter>
+      <Filter>glsl</Filter>
     </ClInclude>
     <ClInclude Include="DDSLoader.h">
-      <Filter>ヘッダー ファイル</Filter>
+      <Filter>texture</Filter>
+    </ClInclude>
+    <ClInclude Include="stb_image.h">
+      <Filter>texture</Filter>
     </ClInclude>
     <ClInclude Include="TexLoader.h">
-      <Filter>ヘッダー ファイル</Filter>
+      <Filter>texture</Filter>
+    </ClInclude>
+    <ClInclude Include="PMXLoader.h">
+      <Filter>pmx</Filter>
+    </ClInclude>
+    <ClInclude Include="GraphicsEngine.h">
+      <Filter>graphics</Filter>
+    </ClInclude>
+    <ClInclude Include="common.h">
+      <Filter>wrapper</Filter>
+    </ClInclude>
+    <ClInclude Include="InstanceManager.h">
+      <Filter>wrapper</Filter>
+    </ClInclude>
+    <ClInclude Include="DeviceManager.h">
+      <Filter>wrapper</Filter>
+    </ClInclude>
+    <ClInclude Include="PhysicalDevice.h">
+      <Filter>wrapper</Filter>
+    </ClInclude>
+    <ClInclude Include="Surface.h">
+      <Filter>wrapper</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <None Include="basic.vert.glsl">
-      <Filter>シェーダー ファイル</Filter>
-    </None>
     <None Include="basic.frag.glsl">
-      <Filter>シェーダー ファイル</Filter>
+      <Filter>glsl</Filter>
+    </None>
+    <None Include="basic.vert.glsl">
+      <Filter>glsl</Filter>
     </None>
   </ItemGroup>
 </Project>
