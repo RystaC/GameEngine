@@ -108,7 +108,8 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <LanguageStandard>stdcpp20</LanguageStandard>
+      <LanguageStandard>stdcpplatest</LanguageStandard>
+      <LanguageStandard_C>stdc17</LanguageStandard_C>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -135,25 +136,26 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="DDSLoader.cpp" />
-    <ClCompile Include="DeviceManager.cpp" />
     <ClCompile Include="GLSLCompiler.cpp" />
     <ClCompile Include="GraphicsEngine.cpp" />
-    <ClCompile Include="InstanceManager.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="PMXLoader.cpp" />
     <ClCompile Include="TexLoader.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Buffer.h" />
     <ClInclude Include="common.h" />
     <ClInclude Include="DDSLoader.h" />
-    <ClInclude Include="DeviceManager.h" />
+    <ClInclude Include="Device.h" />
+    <ClInclude Include="DeviceQueue.h" />
     <ClInclude Include="GLSLCompiler.h" />
     <ClInclude Include="GraphicsEngine.h" />
-    <ClInclude Include="InstanceManager.h" />
+    <ClInclude Include="Instance.h" />
     <ClInclude Include="PhysicalDevice.h" />
     <ClInclude Include="PMXLoader.h" />
     <ClInclude Include="stb_image.h" />
     <ClInclude Include="Surface.h" />
+    <ClInclude Include="Swapchain.h" />
     <ClInclude Include="TexLoader.h" />
   </ItemGroup>
   <ItemGroup>

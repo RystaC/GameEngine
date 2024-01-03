@@ -40,12 +40,6 @@
     <ClCompile Include="GraphicsEngine.cpp">
       <Filter>graphics</Filter>
     </ClCompile>
-    <ClCompile Include="InstanceManager.cpp">
-      <Filter>wrapper</Filter>
-    </ClCompile>
-    <ClCompile Include="DeviceManager.cpp">
-      <Filter>wrapper</Filter>
-    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="GLSLCompiler.h">
@@ -69,16 +63,25 @@
     <ClInclude Include="common.h">
       <Filter>wrapper</Filter>
     </ClInclude>
-    <ClInclude Include="InstanceManager.h">
+    <ClInclude Include="Instance.h">
       <Filter>wrapper</Filter>
     </ClInclude>
-    <ClInclude Include="DeviceManager.h">
+    <ClInclude Include="Device.h">
+      <Filter>wrapper</Filter>
+    </ClInclude>
+    <ClInclude Include="Surface.h">
       <Filter>wrapper</Filter>
     </ClInclude>
     <ClInclude Include="PhysicalDevice.h">
       <Filter>wrapper</Filter>
     </ClInclude>
-    <ClInclude Include="Surface.h">
+    <ClInclude Include="Swapchain.h">
+      <Filter>wrapper</Filter>
+    </ClInclude>
+    <ClInclude Include="DeviceQueue.h">
+      <Filter>wrapper</Filter>
+    </ClInclude>
+    <ClInclude Include="Buffer.h">
       <Filter>wrapper</Filter>
     </ClInclude>
   </ItemGroup>

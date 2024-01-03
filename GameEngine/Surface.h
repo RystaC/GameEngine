@@ -5,13 +5,15 @@
 namespace vkw {
 	class Surface {
 		VkSurfaceKHR surface_;
-		std::shared_ptr<Instance> instance_;
-		VkAllocationCallbacks* allocator_;
+		std::shared_ptr<Instance_> instance_;
 
 	public:
-		Surface(VkSurfaceKHR surface, std::shared_ptr<Instance> instance, VkAllocationCallbacks* allocator = nullptr) noexcept : surface_(surface), instance_(instance), allocator_(allocator) {}
-		~Surface() noexcept {
-			vkDestroySurfaceKHR(instance_->get(), surface_, allocator_);
+		Surface(std::shared_ptr<Instance_> instance, SDL_Window& window) : instance_(instance) {
+			VK_CHECK(SDL_Vulkan_CreateSurface(&window, instance->get(), &surface_));
 		}
+
+		~Surface() noexcept { vkDestroySurfaceKHR(instance_->get(), surface_, nullptr); }
+
+		const auto& get() const noexcept { return surface_; }
 	};
 }
